@@ -7,7 +7,7 @@
     "start": "vite",
     "build": "vite build && tsc -p tsconfig.production.json",
     "prepublishOnly": "npm run build",
-    "postpublish": "git push --flow-tags",
+    "postpublish": "git push --follow-tags",
     "serve": "vite preview"
   },
   "repository": {
