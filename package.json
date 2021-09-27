@@ -8,6 +8,11 @@
     "build": "vite build && tsc -p tsconfig.production.json",
     "serve": "vite preview"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wmzy/native-router-react"
+  },
+  "sideEffects": false,
   "peerDependencies": {
     "react": "^17.0.0",
     "react-dom": "^17.0.0"
