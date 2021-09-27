@@ -1,6 +1,6 @@
 {
   "name": "native-router-react",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "main": "dist/native-router-react.es.js",
   "types": "dist/index.d.ts",
   "scripts": {
