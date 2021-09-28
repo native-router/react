@@ -38,6 +38,14 @@ export default defineConfig({
     open: '/demos/'
   },
   plugins: [
+    {
+      apply: 'serve',
+      enforce: 'pre',
+      ...linaria({
+        sourceMap: true,
+        exclude: ['node_modules/**'],
+      }),
+    } as PluginOption,
     react({
       exclude: ['node_modules/**'],
       babel: {
@@ -45,12 +53,5 @@ export default defineConfig({
         babelrc: true,
       }
     }),
-    {
-      apply: 'serve',
-      ...linaria({
-        sourceMap: true,
-        exclude: ['node_modules/**'],
-      }),
-    } as PluginOption,
   ],
 });

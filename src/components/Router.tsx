@@ -10,18 +10,19 @@ import {
 import UniversalRouter, { Route, RouterOptions, Routes } from 'universal-router';
 import { createBrowserHistory, History, Path } from 'history';
 import { createPath, parsePath } from 'history';
-import { createCurrentGuard } from '@@/util';
+import { createCurrentGuard, uniqId } from '@@/util';
 
 export type RouterContext = {
   router: UniversalRouter;
   history: History;
   view: ReactNode;
   setView(view: ReactNode): void;
-  setProgress(progress?: number): void;
+  loading?: number;
+  setLoading(loading?: number): void;
   navigate: (to: string, state?: any) => void;
+  cancel(): void;
 };
 const Context = createContext<RouterContext | null>(null);
-const ProgressContext = createContext<number | undefined>(undefined);
 
 type Location<T = any> = Path & { state: T };
 type HistoryState = { locationStack: Location[]; index?: number } | null;
@@ -30,54 +31,23 @@ type Props<R = any, C extends RouterContext = RouterContext> = {
   routes: Routes<R, C> | Route<R, C>;
 } & RouterOptions<R, C>;
 
-const [currentGuard, cancelOther] = createCurrentGuard();
+const [currentGuard, cancelAll] = createCurrentGuard();
 
 export function BaseRouter<R = any, C extends RouterContext = RouterContext>({ routes, history, children, ...rest }: Props<R, C> & {history: History<HistoryState>}) {
   const router = useMemo(() => new UniversalRouter<R, C>(routes, rest), [routes, ...Object.values(rest)]);
-  const [progress, setProgress] = useState<number>();
+  // TODO: 移到上层 context
+  const [loading, setLoading] = useState<number>();
   const [view, setView] = useState<ReactNode>();
-  const viewStackRef = useRef<any>([]);
+  const viewStackRef = useRef<ReactNode[]>([]);
   const locationStackRef = useRef<Location[]>([history.location]);
 
-  useEffect(() => {
-    const locationStack = history.location.state?.locationStack || locationStackRef.current;
-    locationStackRef.current = locationStack;
-
-    setProgress(0);
-    Promise.all(
-      locationStack.map((l) =>
-        router.resolve({
-          pathname: createPath(l),
-          location: l,
-        })
-      )
-    )
-      .then((views) => {
-        viewStackRef.current = views;
-        history.replace(createPath(history.location), history.location.state);
-        setProgress(1);
-      })
-      .finally(() => setProgress(undefined));
-  }, [router]);
-
-  useEffect(() => {
-    return history.listen(({ action, location }) => {
-      cancelOther();
-
-      const index = location.state?.index || 0;
-      setView(viewStackRef.current[index]);
-
-      if (action === 'POP') {
-        history.replace(createPath(history.location), {
-          ...history.location.state,
-          locationStack: locationStackRef.current,
-        });
-      }
-    });
-  }, [history]);
+  const cancel = useCallback(() => {
+    cancelAll();
+    setLoading(undefined);
+  }, []);
 
   const navigate = useCallback((to, state) => {
-    setProgress(0);
+    setLoading(uniqId());
     to = router.baseUrl + to;
     const location = { pathname: '', query: '', hash: '', ...parsePath(to), state } as Location;
     const nextIndex = (history.location.state?.index || 0) + 1;
@@ -95,14 +65,49 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({ r
           index: nextIndex,
           locationStack: locationStackRef.current,
         });
-        setProgress(1);
       })
-      .finally(() => setProgress(undefined));
+      .finally(() => setLoading(undefined));
   }, [router]);
 
+  useEffect(() => {
+    const locationStack = history.location.state?.locationStack || locationStackRef.current;
+    locationStackRef.current = locationStack;
+
+    setLoading(uniqId());
+    Promise.all(
+      locationStack.map((l) =>
+        router.resolve({
+          pathname: createPath(l),
+          location: l,
+        })
+      )
+    )
+      .then((views) => {
+        viewStackRef.current = views;
+        history.replace(createPath(history.location), history.location.state);
+      })
+      .finally(() => setLoading(undefined));
+  }, [router]);
+
+  useEffect(() => {
+    return history.listen(({ action, location }) => {
+      cancel();
+
+      const index = location.state?.index || 0;
+      setView(viewStackRef.current[index]);
+
+      if (action === 'POP') {
+        history.replace(createPath(history.location), {
+          ...history.location.state,
+          locationStack: locationStackRef.current,
+        });
+      }
+    });
+  }, [history]);
+
   return (
-    <Context.Provider {...rest} value={{ history, router, setProgress, view, setView, navigate }}>
-      <ProgressContext.Provider value={progress}>{typeof children === 'undefined' ? view : children}</ProgressContext.Provider>
+    <Context.Provider {...rest} value={{ history, router, loading, setLoading, view, setView, navigate, cancel }}>
+      {typeof children === 'undefined' ? view : children}
     </Context.Provider>
   );
 }
@@ -116,8 +121,8 @@ export function useRouter() {
   return useContext(Context)!;
 }
 
-export function useProgress() {
-  return useContext(ProgressContext);
+export function useLoading() {
+  return useContext(Context)?.loading;
 }
 
 export function View() {
