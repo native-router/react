@@ -1,80 +1,78 @@
 import { css } from '@linaria/core';
-import { CSSProperties, ReactPortal, useRef } from 'react';
-import {
-  useMemo,
-  useEffect,
-  useState,
-} from 'react';
+import { CSSProperties, ReactPortal, useMemo, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLoading, useRouter } from 'native-router-react';
 
 export default function Loading(): ReactPortal | null {
-  const {cancel} = useRouter();
-  const isLoading = useLoading();
-  const [percent, setPercent] = useState<number>();
+  const { cancel } = useRouter();
+  const [percent, setPercent] = useState<number>(0);
   const el = useMemo(() => document.createElement('div'), []);
-  const animationRef = useRef(false);
+
+  const loading = useLoading();
+  const { key, status } = loading || {};
 
   useEffect(() => {
-    if (!isLoading) return () => {};
-
-    setPercent(p => {
-      if (p === undefined) return 0;
-      animationRef.current = true;
-      return undefined;
-    });
-    return () => setPercent(100);
-  }, [isLoading]);
+    setPercent(0);
+  }, [key]);
 
   useEffect(() => {
-    if (percent === undefined) {
-      if ( !animationRef.current) return;
-      animationRef.current = false;
-      setPercent(0);
-    } else if (percent === 0) {
-      setPercent(90);
-    } else if (percent === 100) {
-      const timer = setTimeout(() => setPercent(undefined), 600);
+    if (status === undefined) {
+      if (el.parentElement) document.body.removeChild(el);
+    } else if (status === 'pending') {
+      if (el.parentElement) document.body.removeChild(el);
+      document.body.appendChild(el);
+
+      const timer = setInterval(() => {
+        setPercent((p) => {
+          if (p >= 80) return p;
+          return p + 30;
+        });
+      }, 500);
+
+      return () => clearInterval(timer);
+    } else if (status === 'resolved') {
+      setPercent(100);
+      const timer = setTimeout(() => {
+        if (el.parentElement) document.body.removeChild(el);
+      }, 500);
       return () => clearTimeout(timer);
     }
-  }, [percent]);
-
-  useEffect(() => {
-    document.body.appendChild(el);
-    return () => {
-      document.body.removeChild(el);
-    };
-  }, []);
-
-  if (percent === undefined) return null;
+  }, [status]);
 
   return createPortal(
     <div
+      title="Click to cancel!"
       onClick={cancel}
       className={css`
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
-        height: 8px;
+        height: 12px;
         z-index: 1000;
         background-color: rgba(0, 0, 0, 0.5);
         display: flex;
         align-items: center;
+        overflow: hidden;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, .5);
+        cursor: pointer;
 
         &:hover {
           height: 24px;
         }
       `}
     >
-      <div
-        style={{ '--loading-percent': `${percent}%`, transition: `width ${percent === 100 ? 0.5 : 5}s` } as CSSProperties}
-        className={css`
-          width: var(--loading-percent);
-          background: blue;
-          height: 100%;
-        `}
-      />
+      {percent ? (
+        <div
+          style={{ width: `${percent}%` } as CSSProperties}
+          className={css`
+            transition: width 0.5s;
+            background: #ffa8b6;
+            height: 100%;
+            border-radius: 8px;
+          `}
+        />
+      ) : null}
     </div>,
     el
   );

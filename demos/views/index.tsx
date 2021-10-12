@@ -25,6 +25,9 @@ export default function App() {
                       <Link to="/">Home</Link>
                     </li>
                     <li>
+                      <Link to="/help">Help</Link>
+                    </li>
+                    <li>
                       <Link to="/about">About</Link>
                     </li>
                   </ul>
@@ -37,6 +40,7 @@ export default function App() {
         },
         children: [
           { path: '/', action: () => import('./Home') },
+          { path: '/help', action: () => import('./Help') },
           { path: '/about', action: () => import('./About') },
         ],
       }}

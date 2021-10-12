@@ -7,18 +7,27 @@ import {
   useEffect,
   useState,
 } from 'react';
-import UniversalRouter, { Route, RouterOptions, Routes } from 'universal-router';
+import UniversalRouter, {
+  Route,
+  RouterOptions,
+  Routes,
+} from 'universal-router';
 import { createBrowserHistory, History, Path } from 'history';
 import { createPath, parsePath } from 'history';
 import { createCurrentGuard, uniqId } from '@@/util';
+
+export type LoadStatus = {
+  key: number;
+  status: 'pending' | 'resolved' | 'rejected';
+};
 
 export type RouterContext = {
   router: UniversalRouter;
   history: History;
   view: ReactNode;
   setView(view: ReactNode): void;
-  loading?: number;
-  setLoading(loading?: number): void;
+  loading?: LoadStatus;
+  setLoading(loading?: LoadStatus): void;
   navigate: (to: string, state?: any) => void;
   cancel(): void;
 };
@@ -33,60 +42,95 @@ type Props<R = any, C extends RouterContext = RouterContext> = {
 
 const [currentGuard, cancelAll] = createCurrentGuard();
 
-export function BaseRouter<R = any, C extends RouterContext = RouterContext>({ routes, history, children, ...rest }: Props<R, C> & {history: History<HistoryState>}) {
-  const router = useMemo(() => new UniversalRouter<R, C>(routes, rest), [routes, ...Object.values(rest)]);
+export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
+  routes,
+  history,
+  children,
+  ...rest
+}: Props<R, C> & { history: History<HistoryState> }) {
+  const router = useMemo(
+    () => new UniversalRouter<R, C>(routes, rest),
+    [routes, ...Object.values(rest)]
+  );
   // TODO: 移到上层 context
-  const [loading, setLoading] = useState<number>();
+  const [loading, setLoading] = useState<LoadStatus>();
   const [view, setView] = useState<ReactNode>();
   const viewStackRef = useRef<ReactNode[]>([]);
   const locationStackRef = useRef<Location[]>([history.location]);
 
   const cancel = useCallback(() => {
-    cancelAll();
-    setLoading(undefined);
+    setLoading((l) => {
+      if (l && l.status === 'pending') {
+        cancelAll();
+        return undefined;
+      }
+      return l;
+    });
   }, []);
 
-  const navigate = useCallback((to, state) => {
-    setLoading(uniqId());
-    to = router.baseUrl + to;
-    const location = { pathname: '', query: '', hash: '', ...parsePath(to), state } as Location;
-    const nextIndex = (history.location.state?.index || 0) + 1;
+  const navigate = useCallback(
+    (to, state) => {
+      to = router.baseUrl + to;
+      const location = {
+        pathname: '',
+        query: '',
+        hash: '',
+        ...parsePath(to),
+        state,
+      } as Location;
+      const nextIndex = (history.location.state?.index || 0) + 1;
 
-    currentGuard(
-      router.resolve({
-        pathname: location.pathname,
-        location,
-      })
-    )
-      .then((view) => {
-        locationStackRef.current = [...locationStackRef.current.slice(0, nextIndex), location];
-        viewStackRef.current = [...viewStackRef.current.slice(0, nextIndex), view];
-        history.push(to, {
-          index: nextIndex,
-          locationStack: locationStackRef.current,
-        });
-      })
-      .finally(() => setLoading(undefined));
-  }, [router]);
+      const key = uniqId();
+      setLoading({ key, status: 'pending' });
+      currentGuard(
+        router.resolve({
+          pathname: location.pathname,
+          location,
+        })
+      )
+        .then((view) => {
+          locationStackRef.current = [
+            ...locationStackRef.current.slice(0, nextIndex),
+            location,
+          ];
+          viewStackRef.current = [
+            ...viewStackRef.current.slice(0, nextIndex),
+            view,
+          ];
+          history.push(to, {
+            index: nextIndex,
+            locationStack: locationStackRef.current,
+          });
+          setLoading({ key, status: 'resolved' });
+        })
+        .catch(() => setLoading({ key, status: 'rejected' }));
+    },
+    [router]
+  );
 
   useEffect(() => {
-    const locationStack = history.location.state?.locationStack || locationStackRef.current;
+    const locationStack =
+      history.location.state?.locationStack || locationStackRef.current;
     locationStackRef.current = locationStack;
 
-    setLoading(uniqId());
-    Promise.all(
-      locationStack.map((l) =>
-        router.resolve({
-          pathname: createPath(l),
-          location: l,
-        })
+    const key = uniqId();
+    setLoading({ key, status: 'pending' });
+    currentGuard(
+      Promise.all(
+        locationStack.map((l) =>
+          router.resolve({
+            pathname: createPath(l),
+            location: l,
+          })
+        )
       )
     )
       .then((views) => {
         viewStackRef.current = views;
         history.replace(createPath(history.location), history.location.state);
+        setLoading({ key, status: 'resolved' });
       })
-      .finally(() => setLoading(undefined));
+      .catch(() => setLoading({ key, status: 'rejected' }));
   }, [router]);
 
   useEffect(() => {
@@ -106,13 +150,27 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({ r
   }, [history]);
 
   return (
-    <Context.Provider {...rest} value={{ history, router, loading, setLoading, view, setView, navigate, cancel }}>
+    <Context.Provider
+      {...rest}
+      value={{
+        history,
+        router,
+        loading,
+        setLoading,
+        view,
+        setView,
+        navigate,
+        cancel,
+      }}
+    >
       {typeof children === 'undefined' ? view : children}
     </Context.Provider>
   );
 }
 
-export function Router<R = any, C extends RouterContext = RouterContext>(props: Props<R, C>) {
+export function Router<R = any, C extends RouterContext = RouterContext>(
+  props: Props<R, C>
+) {
   const history = createBrowserHistory() as History<HistoryState>;
   return <BaseRouter {...props} history={history} />;
 }
