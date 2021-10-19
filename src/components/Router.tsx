@@ -28,7 +28,8 @@ export type RouterContext = {
   setView(view: ReactNode): void;
   loading?: LoadStatus;
   setLoading(loading?: LoadStatus): void;
-  navigate: (to: string, state?: any) => void;
+  navigate: (to: string, options?: {state?: any; replace?: boolean}) => void;
+  refresh(): void;
   cancel(): void;
 };
 const Context = createContext<RouterContext | null>(null);
@@ -69,16 +70,16 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
   }, []);
 
   const navigate = useCallback(
-    (to, state) => {
+    (to, {state, replace} = {}) => {
       to = router.baseUrl + to;
       const location = {
         pathname: '',
-        query: '',
+        search: '',
         hash: '',
         ...parsePath(to),
         state,
       } as Location;
-      const nextIndex = (history.location.state?.index || 0) + 1;
+      const nextIndex = (history.location.state?.index || 0) + (replace ? 0 : 1);
 
       const key = uniqId();
       setLoading({ key, status: 'pending' });
@@ -97,7 +98,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
             ...viewStackRef.current.slice(0, nextIndex),
             view,
           ];
-          history.push(to, {
+          history[replace ? 'replace' : 'push'](to, {
             index: nextIndex,
             locationStack: locationStackRef.current,
           });
@@ -107,6 +108,11 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
     },
     [router]
   );
+
+  const refresh = useCallback(() => {
+    const {pathname, state, ...rest} = history.location;
+    return navigate(createPath({...rest, pathname: pathname.slice(router.baseUrl.length)}), {replace: true, state: locationStackRef.current[state!.index!].state});
+  }, [navigate]);
 
   useEffect(() => {
     const locationStack =
@@ -160,6 +166,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
         view,
         setView,
         navigate,
+        refresh,
         cancel,
       }}
     >
@@ -180,7 +187,7 @@ export function useRouter() {
 }
 
 export function useLoading() {
-  return useContext(Context)?.loading;
+  return useContext(Context)!.loading;
 }
 
 export function View() {

@@ -1,28 +1,27 @@
 import { View, Router, Link } from 'native-router-react';
 import Layout from './Layout';
-import { sleep } from '@/util';
 import Loading from '@/components/Loading';
+import { ReactNode } from 'react';
+import RouterError from '@/components/RouterError';
 
 export default function App() {
   return (
-    <Router<any>
+    <Router<ReactNode>
       routes={{
         path: '',
         async action({ next }) {
-          const r = await next();
-          if (!r) {
-            return null;
-          }
-          const { default: Child } = r;
-          await sleep(3000);
+          const children = await next();
 
           return (
-            Child && (
+            children && (
               <Layout
                 navigation={
                   <ul>
                     <li>
                       <Link to="/">Home</Link>
+                    </li>
+                    <li>
+                      <Link to="/users">Users</Link>
                     </li>
                     <li>
                       <Link to="/help">Help</Link>
@@ -33,18 +32,53 @@ export default function App() {
                   </ul>
                 }
               >
-                <Child />
+                {children}
               </Layout>
             )
           );
         },
         children: [
-          { path: '/', action: () => import('./Home') },
-          { path: '/help', action: () => import('./Help') },
-          { path: '/about', action: () => import('./About') },
+          {
+            path: '/',
+            action: () =>
+              import('./Home').then(({ default: Home }) => <Home />),
+          },
+          {
+            path: '/users',
+            action: () =>
+              Promise.all([
+                import('./UserList'),
+                import('@/services/user').then((p) => p.fetchList()),
+              ]).then(([{ default: UserList }, users]) => (
+                <UserList users={users} />
+              )),
+          },
+          {
+            path: '/users/:id',
+            action: (ctx, { id }) =>
+              Promise.all([
+                import('./UserProfile'),
+                import('@/services/user').then((p) => p.fetchById(+id)),
+              ]).then(([{ default: UserProfile }, user]) => (
+                <UserProfile {...user!} />
+              )),
+          },
+          {
+            path: '/help',
+            action: () =>
+              import('./Help').then(({ default: Help }) => <Help />),
+          },
+          {
+            path: '/about',
+            action: () =>
+              import('./About').then(({ default: About }) => <About />),
+          },
         ],
       }}
       baseUrl="/demos"
+      errorHandler={(e) => {
+        return <RouterError error={e} />;
+      }}
     >
       <View />
       <Loading />

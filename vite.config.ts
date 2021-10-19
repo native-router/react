@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react'
 import linaria from '@linaria/rollup';
 
 export default defineConfig({
+  base: '/demos/',
   resolve: {
     alias: [
       {
