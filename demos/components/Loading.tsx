@@ -1,25 +1,30 @@
-import { css } from '@linaria/core';
-import { CSSProperties, ReactPortal, useMemo, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useLoading, useRouter } from 'native-router-react';
+import {css} from '@linaria/core';
+import {CSSProperties, ReactPortal, useMemo, useEffect, useState} from 'react';
+import {createPortal} from 'react-dom';
+import {useLoading, useRouter} from 'native-router-react';
 
 export default function Loading(): ReactPortal | null {
-  const { cancel } = useRouter();
+  const {cancel} = useRouter();
   const [percent, setPercent] = useState<number>(0);
   const el = useMemo(() => document.createElement('div'), []);
 
   const loading = useLoading();
-  const { key, status } = loading || {};
+  const {key, status} = loading || {};
 
   useEffect(() => {
     setPercent(0);
   }, [key]);
 
+  // eslint-disable-next-line consistent-return
   useEffect(() => {
+    const remove = () => {
+      if (el.parentElement) document.body.removeChild(el);
+    };
+
     if (status === undefined) {
-      if (el.parentElement) document.body.removeChild(el);
+      remove();
     } else if (status === 'pending') {
-      if (el.parentElement) document.body.removeChild(el);
+      remove();
       document.body.appendChild(el);
 
       const timer = setInterval(() => {
@@ -32,15 +37,18 @@ export default function Loading(): ReactPortal | null {
       return () => clearInterval(timer);
     } else if (status === 'resolved') {
       setPercent(100);
-      const timer = setTimeout(() => {
-        if (el.parentElement) document.body.removeChild(el);
-      }, 500);
-      return () => clearTimeout(timer);
+      const timer = setTimeout(remove, 500);
+      return () => {
+        clearTimeout(timer);
+        remove();
+      };
     }
   }, [status]);
 
   return createPortal(
-    <div
+    <button
+      data-testid="loading"
+      type="button"
       title="Click to cancel!"
       onClick={cancel}
       className={css`
@@ -54,8 +62,11 @@ export default function Loading(): ReactPortal | null {
         display: flex;
         align-items: center;
         overflow: hidden;
-        box-shadow: 0 10px 20px rgba(0, 0, 0, .5);
-        cursor: pointer;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+        width: 100vw;
+        border: none;
+        border-radius: 8px;
+        padding: 0;
 
         &:hover {
           height: 24px;
@@ -64,7 +75,7 @@ export default function Loading(): ReactPortal | null {
     >
       {percent ? (
         <div
-          style={{ width: `${percent}%` } as CSSProperties}
+          style={{width: `${percent}%`} as CSSProperties}
           className={css`
             transition: width 0.5s;
             background: #ffa8b6;
@@ -73,7 +84,7 @@ export default function Loading(): ReactPortal | null {
           `}
         />
       ) : null}
-    </div>,
+    </button>,
     el
   );
 }

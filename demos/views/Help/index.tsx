@@ -1,4 +1,4 @@
-import { css } from '@linaria/core';
+import {css} from '@linaria/core';
 
 export default function Help() {
   return (

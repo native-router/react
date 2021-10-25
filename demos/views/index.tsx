@@ -1,7 +1,7 @@
-import { View, Router, Link } from 'native-router-react';
+import {View, Router, Link} from 'native-router-react';
+import {ReactNode} from 'react';
 import Layout from './Layout';
 import Loading from '@/components/Loading';
-import { ReactNode } from 'react';
 import RouterError from '@/components/RouterError';
 
 export default function App() {
@@ -9,7 +9,7 @@ export default function App() {
     <Router<ReactNode>
       routes={{
         path: '',
-        async action({ next }) {
+        async action({next}) {
           const children = await next();
 
           return (
@@ -40,45 +40,41 @@ export default function App() {
         children: [
           {
             path: '/',
-            action: () =>
-              import('./Home').then(({ default: Home }) => <Home />),
+            action: () => import('./Home').then(({default: Home}) => <Home />)
           },
           {
             path: '/users',
             action: () =>
               Promise.all([
                 import('./UserList'),
-                import('@/services/user').then((p) => p.fetchList()),
-              ]).then(([{ default: UserList }, users]) => (
+                import('@/services/user').then((p) => p.fetchList())
+              ]).then(([{default: UserList}, users]) => (
                 <UserList users={users} />
-              )),
+              ))
           },
           {
             path: '/users/:id',
-            action: (ctx, { id }) =>
+            action: (ctx, {id}) =>
               Promise.all([
                 import('./UserProfile'),
-                import('@/services/user').then((p) => p.fetchById(+id)),
-              ]).then(([{ default: UserProfile }, user]) => (
+                import('@/services/user').then((p) => p.fetchById(+id))
+              ]).then(([{default: UserProfile}, user]) => (
                 <UserProfile {...user!} />
-              )),
+              ))
           },
           {
             path: '/help',
-            action: () =>
-              import('./Help').then(({ default: Help }) => <Help />),
+            action: () => import('./Help').then(({default: Help}) => <Help />)
           },
           {
             path: '/about',
             action: () =>
-              import('./About').then(({ default: About }) => <About />),
-          },
-        ],
+              import('./About').then(({default: About}) => <About />)
+          }
+        ]
       }}
       baseUrl="/demos"
-      errorHandler={(e) => {
-        return <RouterError error={e} />;
-      }}
+      errorHandler={(e) => <RouterError error={e} />}
     >
       <View />
       <Loading />

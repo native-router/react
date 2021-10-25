@@ -1,12 +1,12 @@
-import type { ReactNode } from 'react';
-import { css } from '@linaria/core';
+import type {ReactNode} from 'react';
+import {css} from '@linaria/core';
 
 type Props = {
   navigation: ReactNode;
   children: ReactNode;
 };
 
-export default function Layout({ navigation, children }: Props) {
+export default function Layout({navigation, children}: Props) {
   return (
     <section
       className={css`

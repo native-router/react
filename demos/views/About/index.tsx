@@ -1,4 +1,4 @@
-import { css } from '@linaria/core';
+import {css} from '@linaria/core';
 
 /**
  * About 页面
@@ -13,7 +13,9 @@ export default function About() {
       `}
     >
       <h1>About Native Router</h1>
-      <p>Native Router is another router lib which work like the native browser.</p>
+      <p>
+        Native Router is another router lib which work like the native browser.
+      </p>
     </div>
   );
 }

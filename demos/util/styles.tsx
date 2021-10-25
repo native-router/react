@@ -1,4 +1,5 @@
-import { css } from '@linaria/core';
+/* eslint-disable import/prefer-default-export */
+import {css} from '@linaria/core';
 
 export const center = css`
   display: flex;

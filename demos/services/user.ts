@@ -1,6 +1,9 @@
-import { sleep } from "@/util";
+import {sleep} from '@/util';
 
-const users = [{ id: 1, username: "user 1", description: '...' }, { id: 2, username: "user 2", description: '...' }];
+const users = [
+  {id: 1, username: 'user 1', description: '...'},
+  {id: 2, username: 'user 2', description: '...'}
+];
 
 export async function fetchList() {
   await sleep(3000);
@@ -10,5 +13,5 @@ export async function fetchList() {
 export async function fetchById(id: number) {
   await sleep(3000);
   if (id > 2) throw new Error('Not Found');
-  return users.find(user => user.id === id);
+  return users.find((user) => user.id === id);
 }

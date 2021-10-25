@@ -1,6 +1,6 @@
-import { center } from '@/util/styles';
+import {css} from '@linaria/core';
+import {center} from '@/util/styles';
 import HelloWorld from '@/components/HelloWorld';
-import { css } from '@linaria/core';
 
 export default function Home() {
   return (
