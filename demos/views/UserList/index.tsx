@@ -1,8 +1,8 @@
-import { User } from '@/types/user';
-import { css } from '@linaria/core';
-import { Link } from 'native-router-react';
+import {css} from '@linaria/core';
+import {Link} from 'native-router-react';
+import {User} from '@/types/user';
 
-export default function UserList({ users }: { users: User[] }) {
+export default function UserList({users}: {users: User[]}) {
   return (
     <div>
       <h1
@@ -19,7 +19,9 @@ export default function UserList({ users }: { users: User[] }) {
           </li>
         ))}
         <li>
-          <Link to={`/users/3`}>user 3(lost)</Link>
+          <Link to="/users/3" data-testid="lost">
+            user 3(lost)
+          </Link>
         </li>
       </ul>
     </div>

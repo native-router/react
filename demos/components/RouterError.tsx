@@ -1,17 +1,18 @@
-import { css } from '@linaria/core';
-import { useRouter } from 'native-router-react';
+import {useRouter} from 'native-router-react';
 
 type Props = {
   error: Error;
 };
 
-export default function RouterError({ error }: Props) {
-  const { refresh } = useRouter();
+export default function RouterError({error}: Props) {
+  const {refresh} = useRouter();
   return (
     <section>
       <h1>Error</h1>
       <pre>{error.stack}</pre>
-      <button onClick={refresh}>Refresh</button>
+      <button type="button" onClick={refresh}>
+        Refresh
+      </button>
     </section>
   );
 }

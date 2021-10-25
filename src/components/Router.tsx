@@ -1,20 +1,22 @@
-import { ReactNode, useMemo } from 'react';
 import {
+  ReactNode,
+  useMemo,
   useCallback,
   useRef,
   createContext,
   useContext,
   useEffect,
-  useState,
+  useState
 } from 'react';
-import UniversalRouter, {
-  Route,
-  RouterOptions,
-  Routes,
-} from 'universal-router';
-import { createBrowserHistory, History, Path } from 'history';
-import { createPath, parsePath } from 'history';
-import { createCurrentGuard, uniqId } from '@@/util';
+import UniversalRouter, {Route, RouterOptions, Routes} from 'universal-router';
+import {
+  createBrowserHistory,
+  History,
+  Path,
+  createPath,
+  parsePath
+} from 'history';
+import {createCurrentGuard, uniqId} from '@@/util';
 
 export type LoadStatus = {
   key: number;
@@ -34,8 +36,8 @@ export type RouterContext = {
 };
 const Context = createContext<RouterContext | null>(null);
 
-type Location<T = any> = Path & { state: T };
-type HistoryState = { locationStack: Location[]; index?: number } | null;
+type Location<T = any> = Path & {state: T};
+type HistoryState = {locationStack: Location[]; index?: number} | null;
 type Props<R = any, C extends RouterContext = RouterContext> = {
   children: ReactNode;
   routes: Routes<R, C> | Route<R, C>;
@@ -48,7 +50,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
   history,
   children,
   ...rest
-}: Props<R, C> & { history: History<HistoryState> }) {
+}: Props<R, C> & {history: History<HistoryState>}) {
   const router = useMemo(
     () => new UniversalRouter<R, C>(routes, rest),
     [routes, ...Object.values(rest)]
@@ -77,41 +79,50 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
         search: '',
         hash: '',
         ...parsePath(to),
-        state,
+        state
       } as Location;
-      const nextIndex = (history.location.state?.index || 0) + (replace ? 0 : 1);
+      const nextIndex =
+        (history.location.state?.index || 0) + (replace ? 0 : 1);
 
       const key = uniqId();
-      setLoading({ key, status: 'pending' });
+      setLoading({key, status: 'pending'});
       currentGuard(
         router.resolve({
           pathname: location.pathname,
-          location,
+          location
         })
       )
-        .then((view) => {
+        .then((resolvedView) => {
           locationStackRef.current = [
             ...locationStackRef.current.slice(0, nextIndex),
-            location,
+            location
           ];
           viewStackRef.current = [
             ...viewStackRef.current.slice(0, nextIndex),
-            view,
+            resolvedView
           ];
           history[replace ? 'replace' : 'push'](to, {
             index: nextIndex,
-            locationStack: locationStackRef.current,
+            locationStack: locationStackRef.current
           });
-          setLoading({ key, status: 'resolved' });
+          setLoading({key, status: 'resolved'});
         })
-        .catch(() => setLoading({ key, status: 'rejected' }));
+        .catch(() => setLoading({key, status: 'rejected'}));
+
+      return cancel;
     },
     [router]
   );
 
   const refresh = useCallback(() => {
-    const {pathname, state, ...rest} = history.location;
-    return navigate(createPath({...rest, pathname: pathname.slice(router.baseUrl.length)}), {replace: true, state: locationStackRef.current[state!.index!].state});
+    const {pathname, state, ...restLocation} = history.location;
+    return navigate(
+      createPath({
+        ...restLocation,
+        pathname: pathname.slice(router.baseUrl.length)
+      }),
+      {replace: true, state: locationStackRef.current[state!.index!].state}
+    );
   }, [navigate]);
 
   useEffect(() => {
@@ -120,13 +131,13 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
     locationStackRef.current = locationStack;
 
     const key = uniqId();
-    setLoading({ key, status: 'pending' });
+    setLoading({key, status: 'pending'});
     currentGuard(
       Promise.all(
         locationStack.map((l) =>
           router.resolve({
             pathname: createPath(l),
-            location: l,
+            location: l
           })
         )
       )
@@ -134,26 +145,29 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
       .then((views) => {
         viewStackRef.current = views;
         history.replace(createPath(history.location), history.location.state);
-        setLoading({ key, status: 'resolved' });
+        setLoading({key, status: 'resolved'});
       })
-      .catch(() => setLoading({ key, status: 'rejected' }));
+      .catch(() => setLoading({key, status: 'rejected'}));
+    // return cancel;
   }, [router]);
 
-  useEffect(() => {
-    return history.listen(({ action, location }) => {
-      cancel();
+  useEffect(
+    () =>
+      history.listen(({action, location}) => {
+        cancel();
 
-      const index = location.state?.index || 0;
-      setView(viewStackRef.current[index]);
+        const index = location.state?.index || 0;
+        setView(viewStackRef.current[index]);
 
-      if (action === 'POP') {
-        history.replace(createPath(history.location), {
-          ...history.location.state,
-          locationStack: locationStackRef.current,
-        });
-      }
-    });
-  }, [history]);
+        if (action === 'POP') {
+          history.replace(createPath(history.location), {
+            ...history.location.state,
+            locationStack: locationStackRef.current
+          });
+        }
+      }),
+    [history]
+  );
 
   return (
     <Context.Provider
@@ -167,7 +181,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
         setView,
         navigate,
         refresh,
-        cancel,
+        cancel
       }}
     >
       {typeof children === 'undefined' ? view : children}
@@ -191,6 +205,6 @@ export function useLoading() {
 }
 
 export function View() {
-  const { view } = useRouter();
+  const {view} = useRouter();
   return <>{view}</>;
 }

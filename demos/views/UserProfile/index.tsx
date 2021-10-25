@@ -1,5 +1,5 @@
-import { User } from '@/types/user';
-import { css } from '@linaria/core';
+import {css} from '@linaria/core';
+import {User} from '@/types/user';
 
 export default function UserProfile({username, description}: User) {
   return (

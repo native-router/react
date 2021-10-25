@@ -1,32 +1,52 @@
 module.exports = {
   presets: [
-    ['@babel/env', { modules: false, useBuiltIns: 'usage', corejs: 3 }],
+    ['@babel/env', {modules: false, useBuiltIns: 'usage', corejs: 3}],
     '@babel/typescript',
     [
       '@babel/preset-react',
       {
-        runtime: 'automatic', // defaults to classic
-      },
-    ],
+        runtime: 'automatic' // defaults to classic
+      }
+    ]
   ],
   env: {
     test: {
       presets: [
-        '@babel/typescript',
-        ['@babel/env', { targets: { node: true } }],
-      ],
-    },
-    production: {
-      presets: [
-        ['@babel/env', { modules: false }],
+        '@linaria',
+        ['@babel/env', {targets: {node: true}, modules: 'commonjs'}],
         '@babel/typescript',
         [
           '@babel/preset-react',
           {
-            runtime: 'automatic', // defaults to classic
-          },
-        ],
+            runtime: 'automatic' // defaults to classic
+          }
+        ]
       ],
+      plugins: [
+        [
+          'module-resolver',
+          {
+            alias: {
+              'native-router-react': `${__dirname}/src/index.tsx`,
+              '^@@/(.*)': `${__dirname}/src/\\1`,
+              '^@/(.*)': `${__dirname}/demos/\\1`
+            },
+            extensions: ['.ts', '.tsx', '.js', '.jsx']
+          }
+        ]
+      ]
     },
-  },
+    production: {
+      presets: [
+        ['@babel/env', {modules: false}],
+        '@babel/typescript',
+        [
+          '@babel/preset-react',
+          {
+            runtime: 'automatic' // defaults to classic
+          }
+        ]
+      ]
+    }
+  }
 };

@@ -9,11 +9,12 @@ export function createCurrentGuard() {
     function currentGuard<T>(promise: Promise<T>): Promise<T> {
       const cur = uniqId();
       current = cur;
-      return promise.then((result) => (current === cur ? result : new Promise(() => {})));
+      return promise.then((result) =>
+        current === cur ? result : new Promise(() => {})
+      );
     },
     function cancel() {
       current = undefined;
-    },
+    }
   ] as const;
 }
-
