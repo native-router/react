@@ -71,6 +71,11 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
     });
   }, []);
 
+  const rejectLoading = (key: number) => (e: Error) => {
+    setLoading({key, status: 'rejected'});
+    throw e;
+  };
+
   const navigate = useCallback(
     (to, {state, replace} = {}) => {
       to = router.baseUrl + to;
@@ -107,9 +112,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
           });
           setLoading({key, status: 'resolved'});
         })
-        .catch(() => setLoading({key, status: 'rejected'}));
-
-      return cancel;
+        .catch(rejectLoading(key));
     },
     [router]
   );
@@ -132,14 +135,12 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
 
     const key = uniqId();
     setLoading({key, status: 'pending'});
-    currentGuard(
-      Promise.all(
-        locationStack.map((l) =>
-          router.resolve({
-            pathname: createPath(l),
-            location: l
-          })
-        )
+    Promise.all(
+      locationStack.map((l) =>
+        router.resolve({
+          pathname: createPath(l),
+          location: l
+        })
       )
     )
       .then((views) => {
@@ -147,8 +148,9 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
         history.replace(createPath(history.location), history.location.state);
         setLoading({key, status: 'resolved'});
       })
-      .catch(() => setLoading({key, status: 'rejected'}));
-    // return cancel;
+      .catch(rejectLoading(key));
+
+    return cancel;
   }, [router]);
 
   useEffect(
