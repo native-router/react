@@ -8,7 +8,7 @@ type Props = {
 };
 
 export default function Link({to, ...rest}: Props) {
-  const {history, navigate, router} = useRouter();
+  const {navigate, createHref} = useRouter();
 
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
@@ -16,10 +16,6 @@ export default function Link({to, ...rest}: Props) {
   }
   return (
     // eslint-disable-next-line jsx-a11y/anchor-has-content
-    <a
-      {...rest}
-      href={router.baseUrl + history.createHref(to)}
-      onClick={handleClick}
-    />
+    <a {...rest} href={createHref(to)} onClick={handleClick} />
   );
 }

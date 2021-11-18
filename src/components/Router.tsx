@@ -1,6 +1,5 @@
 import {
   ReactNode,
-  useMemo,
   useCallback,
   useRef,
   createContext,
@@ -24,8 +23,8 @@ export type LoadStatus = {
 };
 
 export type RouterContext = {
-  router: UniversalRouter;
   history: History;
+  createHref(to: string): string;
   view: ReactNode;
   setView(view: ReactNode): void;
   loading?: LoadStatus;
@@ -51,10 +50,8 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
   children,
   ...rest
 }: Props<R, C> & {history: History<HistoryState>}) {
-  const router = useMemo(
-    () => new UniversalRouter<R, C>(routes, rest),
-    [routes, ...Object.values(rest)]
-  );
+  const routerRef = useRef<UniversalRouter>();
+  routerRef.current = new UniversalRouter<R, C>(routes, rest);
   // TODO: 移到上层 context
   const [loading, setLoading] = useState<LoadStatus>();
   const [view, setView] = useState<ReactNode>();
@@ -76,48 +73,46 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
     throw e;
   };
 
-  const navigate = useCallback(
-    (to, {state, replace} = {}) => {
-      to = router.baseUrl + to;
-      const location = {
-        pathname: '',
-        search: '',
-        hash: '',
-        ...parsePath(to),
-        state
-      } as Location;
-      const nextIndex =
-        (history.location.state?.index || 0) + (replace ? 0 : 1);
+  const navigate = useCallback((to, {state, replace} = {}) => {
+    const router = routerRef.current!;
+    to = router.baseUrl + to;
+    const location = {
+      pathname: '',
+      search: '',
+      hash: '',
+      ...parsePath(to),
+      state
+    } as Location;
+    const nextIndex = (history.location.state?.index || 0) + (replace ? 0 : 1);
 
-      const key = uniqId();
-      setLoading({key, status: 'pending'});
-      currentGuard(
-        router.resolve({
-          pathname: location.pathname,
+    const key = uniqId();
+    setLoading({key, status: 'pending'});
+    currentGuard(
+      router.resolve({
+        pathname: location.pathname,
+        location
+      })
+    )
+      .then((resolvedView) => {
+        locationStackRef.current = [
+          ...locationStackRef.current.slice(0, nextIndex),
           location
-        })
-      )
-        .then((resolvedView) => {
-          locationStackRef.current = [
-            ...locationStackRef.current.slice(0, nextIndex),
-            location
-          ];
-          viewStackRef.current = [
-            ...viewStackRef.current.slice(0, nextIndex),
-            resolvedView
-          ];
-          history[replace ? 'replace' : 'push'](to, {
-            index: nextIndex,
-            locationStack: locationStackRef.current
-          });
-          setLoading({key, status: 'resolved'});
-        })
-        .catch(rejectLoading(key));
-    },
-    [router]
-  );
+        ];
+        viewStackRef.current = [
+          ...viewStackRef.current.slice(0, nextIndex),
+          resolvedView
+        ];
+        history[replace ? 'replace' : 'push'](to, {
+          index: nextIndex,
+          locationStack: locationStackRef.current
+        });
+        setLoading({key, status: 'resolved'});
+      })
+      .catch(rejectLoading(key));
+  }, []);
 
   const refresh = useCallback(() => {
+    const router = routerRef.current!;
     const {pathname, state, ...restLocation} = history.location;
     return navigate(
       createPath({
@@ -128,7 +123,13 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
     );
   }, [navigate]);
 
+  const createHref = useCallback(
+    (to: string) => routerRef.current!.baseUrl + history.createHref(to),
+    []
+  );
+
   useEffect(() => {
+    const router = routerRef.current!;
     const locationStack =
       history.location.state?.locationStack || locationStackRef.current;
     locationStackRef.current = locationStack;
@@ -151,7 +152,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
       .catch(rejectLoading(key));
 
     return cancel;
-  }, [router]);
+  }, []);
 
   useEffect(
     () =>
@@ -176,7 +177,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
       {...rest}
       value={{
         history,
-        router,
+        createHref,
         loading,
         setLoading,
         view,
