@@ -35,6 +35,18 @@ export default function Layout() {
             <Link to="/about">About</Link>
           </li>
         </ul>
+        modes
+        <ul>
+          <li>
+            <a href="/demos/">history</a>
+          </li>
+          <li>
+            <a href="/demos/?hash">hash</a>
+          </li>
+          <li>
+            <a href="/demos/?memory">memory</a>
+          </li>
+        </ul>
       </nav>
       <main
         className={css`

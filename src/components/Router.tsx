@@ -7,7 +7,15 @@ import {
   useEffect,
   useState
 } from 'react';
-import {createBrowserHistory, History, createPath, parsePath} from 'history';
+import {
+  History,
+  createPath,
+  parsePath,
+  createBrowserHistory,
+  createHashHistory,
+  createMemoryHistory,
+  MemoryHistoryOptions
+} from 'history';
 import type {Location} from '@@/types';
 import {createCurrentGuard, uniqId} from '@@/util';
 import {ViewProvider} from '@@/context';
@@ -193,6 +201,23 @@ function RouterComponent(props: Props) {
 }
 
 export {RouterComponent as Router};
+
+export function HashRouter(props: Props) {
+  const history = createHashHistory() as History<HistoryState>;
+  return <BaseRouter {...props} history={history} />;
+}
+
+export function MemoryRouter({
+  initialEntries,
+  initialIndex,
+  ...props
+}: Props & MemoryHistoryOptions) {
+  const history = createMemoryHistory({
+    initialEntries,
+    initialIndex
+  }) as History<HistoryState>;
+  return <BaseRouter {...props} history={history} />;
+}
 
 export function useRouter() {
   return useContext(Context)!;
