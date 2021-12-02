@@ -7,6 +7,8 @@ export type Route<T = any> = {
   children?: Route<T>[];
 } & Omit<T, 'path' | 'children'>;
 
+export type Matched<R extends Route = Route> = {route: R} & MatchResult;
+
 export type Options = {
   baseUrl?: string;
 };
@@ -37,7 +39,7 @@ export function match<R extends Route = Route>(
     baseUrl: string,
     // eslint-disable-next-line @typescript-eslint/no-shadow
     pathname: string
-  ): {route: R; matched: MatchResult}[] | undefined {
+  ): Matched<R>[] | undefined {
     for (let i = 0; i < routes.length; i++) {
       const route = routes[i];
       const end = !route.children;
@@ -45,6 +47,10 @@ export function match<R extends Route = Route>(
         ? createMatcher(route.path, {
             strict: true,
             sensitive: true,
+            decode:
+              typeof decodeURIComponent === 'function'
+                ? decodeURIComponent
+                : undefined,
             end
           })(pathname)
         : {
@@ -54,7 +60,7 @@ export function match<R extends Route = Route>(
           };
 
       if (matched) {
-        const result = {route, matched};
+        const result = {route, ...matched};
         if (end) return [result];
         const children = matchRoutes(
           route.children!,
@@ -74,13 +80,3 @@ export function match<R extends Route = Route>(
     pathname.slice(router.baseUrl.length)
   );
 }
-
-// export function resolve<R>(router: Router<R>, pathname: string) {
-//   const result = match(router, pathname);
-//   if (!result) return Promise.reject(new Error('Not Found'));
-//   return Promise.all(
-//     result.map(({route, matched}, index) =>
-//       route.action({route, matched, index, router, url: pathname})
-//     )
-//   );
-// }

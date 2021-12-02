@@ -1,12 +1,7 @@
-import type {ReactNode} from 'react';
 import {css} from '@linaria/core';
+import {Link, View} from 'native-router-react';
 
-type Props = {
-  navigation: ReactNode;
-  children: ReactNode;
-};
-
-export default function Layout({navigation, children}: Props) {
+export default function Layout() {
   return (
     <section
       className={css`
@@ -26,14 +21,27 @@ export default function Layout({navigation, children}: Props) {
           border-right: 1px dashed;
         `}
       >
-        {navigation}
+        <ul>
+          <li>
+            <Link to="/">Home</Link>
+          </li>
+          <li>
+            <Link to="/users">Users</Link>
+          </li>
+          <li>
+            <Link to="/help">Help</Link>
+          </li>
+          <li>
+            <Link to="/about">About</Link>
+          </li>
+        </ul>
       </nav>
       <main
         className={css`
           flex: auto;
         `}
       >
-        {children}
+        <View />
       </main>
     </section>
   );

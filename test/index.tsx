@@ -7,10 +7,6 @@ import {
   configure
 } from '@testing-library/react';
 import App from '@/views';
-import 'should';
-import 'react-dom';
-
-/** @typedef {import('should')} */
 
 declare const $jsdom: any;
 
@@ -22,7 +18,7 @@ describe('Router', () => {
 
     const s = global.setTimeout;
     // @ts-ignore
-    global.setTimeout = (fn, delay) => s(fn, delay / 1000);
+    global.setTimeout = (fn, delay) => s(fn, Math.max(delay / 1000, 30));
   });
 
   beforeEach(() => {

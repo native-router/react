@@ -1,8 +1,9 @@
 import {css} from '@linaria/core';
-import {Link} from 'native-router-react';
+import {Link, useData} from 'native-router-react';
 import {User} from '@/types/user';
 
-export default function UserList({users}: {users: User[]}) {
+export default function UserList() {
+  const users = useData() as User[];
   return (
     <div>
       <h1

@@ -7,15 +7,12 @@ import {
   useEffect,
   useState
 } from 'react';
-import UniversalRouter, {Route, RouterOptions, Routes} from 'universal-router';
-import {
-  createBrowserHistory,
-  History,
-  Path,
-  createPath,
-  parsePath
-} from 'history';
+import {createBrowserHistory, History, createPath, parsePath} from 'history';
+import type {Location} from '@@/types';
 import {createCurrentGuard, uniqId} from '@@/util';
+import {ViewProvider} from '@@/context';
+import {create as createRouter, Router} from '@@/router';
+import {Route, resolve as defaultResolve} from '@@/resolve';
 
 export type LoadStatus = {
   key: number;
@@ -25,7 +22,6 @@ export type LoadStatus = {
 export type RouterContext = {
   history: History;
   createHref(to: string): string;
-  view: ReactNode;
   setView(view: ReactNode): void;
   loading?: LoadStatus;
   setLoading(loading?: LoadStatus): void;
@@ -35,23 +31,27 @@ export type RouterContext = {
 };
 const Context = createContext<RouterContext | null>(null);
 
-type Location<T = any> = Path & {state: T};
 type HistoryState = {locationStack: Location[]; index?: number} | null;
-type Props<R = any, C extends RouterContext = RouterContext> = {
+type Props = {
   children: ReactNode;
-  routes: Routes<R, C> | Route<R, C>;
-} & RouterOptions<R, C>;
+  routes: Route[] | Route;
+  baseUrl?: string;
+  resolve?: typeof defaultResolve;
+  errorHandler?: (error: Error) => ReactNode;
+};
 
 const [currentGuard, cancelAll] = createCurrentGuard();
 
-export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
+export function BaseRouter({
   routes,
   history,
   children,
-  ...rest
-}: Props<R, C> & {history: History<HistoryState>}) {
-  const routerRef = useRef<UniversalRouter>();
-  routerRef.current = new UniversalRouter<R, C>(routes, rest);
+  errorHandler = Promise.reject,
+  baseUrl,
+  resolve = defaultResolve
+}: Props & {history: History<HistoryState>}) {
+  const routerRef = useRef<Router<Route>>();
+  routerRef.current = createRouter(routes, {baseUrl});
   // TODO: 移到上层 context
   const [loading, setLoading] = useState<LoadStatus>();
   const [view, setView] = useState<ReactNode>();
@@ -87,12 +87,8 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
 
     const key = uniqId();
     setLoading({key, status: 'pending'});
-    currentGuard(
-      router.resolve({
-        pathname: location.pathname,
-        location
-      })
-    )
+    currentGuard(resolve(router, location.pathname, location))
+      .catch(errorHandler)
       .then((resolvedView) => {
         locationStackRef.current = [
           ...locationStackRef.current.slice(0, nextIndex),
@@ -138,10 +134,7 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
     setLoading({key, status: 'pending'});
     Promise.all(
       locationStack.map((l) =>
-        router.resolve({
-          pathname: createPath(l),
-          location: l
-        })
+        resolve(router, createPath(l), l).catch(errorHandler)
       )
     )
       .then((views) => {
@@ -174,30 +167,32 @@ export function BaseRouter<R = any, C extends RouterContext = RouterContext>({
 
   return (
     <Context.Provider
-      {...rest}
       value={{
         history,
         createHref,
         loading,
         setLoading,
-        view,
         setView,
         navigate,
         refresh,
         cancel
       }}
     >
-      {typeof children === 'undefined' ? view : children}
+      {typeof children === 'undefined' ? (
+        view
+      ) : (
+        <ViewProvider value={view}>{children}</ViewProvider>
+      )}
     </Context.Provider>
   );
 }
 
-export function Router<R = any, C extends RouterContext = RouterContext>(
-  props: Props<R, C>
-) {
+function RouterComponent(props: Props) {
   const history = createBrowserHistory() as History<HistoryState>;
   return <BaseRouter {...props} history={history} />;
 }
+
+export {RouterComponent as Router};
 
 export function useRouter() {
   return useContext(Context)!;
@@ -205,9 +200,4 @@ export function useRouter() {
 
 export function useLoading() {
   return useContext(Context)!.loading;
-}
-
-export function View() {
-  const {view} = useRouter();
-  return <>{view}</>;
 }

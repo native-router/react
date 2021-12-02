@@ -35,8 +35,7 @@
   },
   "dependencies": {
     "history": "^5.0.1",
-    "path-to-regexp": "^6.2.0",
-    "universal-router": "^9.1.0"
+    "path-to-regexp": "^6.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.15.8",
