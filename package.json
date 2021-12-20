@@ -9,10 +9,11 @@
     "commit": "lint-staged && git-cz -n",
     "coverage": "nyc report --reporter=text-lcov | coveralls",
     "lint": "eslint --fix src test demos *.js --ext .js,.jsx,.ts,.tsx",
+    "deploy": "cross-env BABEL_ENV=development BUILD_DEMO=true vite build && gh-pages -d dist",
     "test": "cross-env NODE_ENV=test nyc mocha",
     "test:watch": "npm test -- --watch",
     "prepublishOnly": "npm run build",
-    "postpublish": "git push --follow-tags",
+    "postpublish": "git push --follow-tags && npm run deploy",
     "serve": "vite preview"
   },
   "repository": {
@@ -73,6 +74,7 @@
     "eslint-plugin-prettier": "^4.0.0",
     "eslint-plugin-react": "^7.26.1",
     "eslint-plugin-react-hooks": "^4.2.0",
+    "gh-pages": "^3.2.3",
     "global-jsdom": "^8.3.0",
     "husky": "^7.0.2",
     "jsdom": "^18.0.0",

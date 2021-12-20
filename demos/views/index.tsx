@@ -67,7 +67,7 @@ export default function App() {
   return (
     <Router
       routes={routes}
-      baseUrl="/demos"
+      baseUrl={import.meta.env.BASE_URL.slice(0, -1)}
       errorHandler={(e) => <RouterError error={e} />}
     >
       <View />
