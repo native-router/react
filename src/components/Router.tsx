@@ -33,6 +33,15 @@ export type RouterContext = {
   setView(view: ReactNode): void;
   loading?: LoadStatus;
   setLoading(loading?: LoadStatus): void;
+  prefetch: (
+    to: string,
+    options?: {
+      state?: any;
+      replace?: boolean;
+      done?: (view: ReactNode) => void;
+      onError?: (e: Error) => void;
+    }
+  ) => () => void;
   navigate: (to: string, options?: {state?: any; replace?: boolean}) => void;
   refresh(): void;
   cancel(): void;
@@ -81,7 +90,7 @@ export function BaseRouter({
     throw e;
   };
 
-  const navigate = useCallback((to, {state, replace} = {}) => {
+  const prefetch = useCallback((to, {state, replace, done, onError} = {}) => {
     const router = routerRef.current!;
     to = router.baseUrl + to;
     const location = {
@@ -91,28 +100,39 @@ export function BaseRouter({
       ...parsePath(to),
       state
     } as Location;
-    const nextIndex = (history.location.state?.index || 0) + (replace ? 0 : 1);
+    const resolvePromise = resolve(router, location.pathname, location).catch(
+      errorHandler
+    );
 
-    const key = uniqId();
-    setLoading({key, status: 'pending'});
-    currentGuard(resolve(router, location.pathname, location))
-      .catch(errorHandler)
-      .then((resolvedView) => {
-        locationStackRef.current = [
-          ...locationStackRef.current.slice(0, nextIndex),
-          location
-        ];
-        viewStackRef.current = [
-          ...viewStackRef.current.slice(0, nextIndex),
-          resolvedView
-        ];
-        history[replace ? 'replace' : 'push'](to, {
-          index: nextIndex,
-          locationStack: locationStackRef.current
-        });
-        setLoading({key, status: 'resolved'});
-      })
-      .catch(rejectLoading(key));
+    resolvePromise.then(done, onError);
+
+    return function commit() {
+      const nextIndex =
+        (history.location.state?.index || 0) + (replace ? 0 : 1);
+      const key = uniqId();
+      setLoading({key, status: 'pending'});
+      currentGuard(resolvePromise)
+        .then((resolvedView) => {
+          locationStackRef.current = [
+            ...locationStackRef.current.slice(0, nextIndex),
+            location
+          ];
+          viewStackRef.current = [
+            ...viewStackRef.current.slice(0, nextIndex),
+            resolvedView
+          ];
+          history[replace ? 'replace' : 'push'](to, {
+            index: nextIndex,
+            locationStack: locationStackRef.current
+          });
+          setLoading({key, status: 'resolved'});
+        })
+        .catch(rejectLoading(key));
+    };
+  }, []);
+
+  const navigate = useCallback((to, options) => {
+    prefetch(to, options)();
   }, []);
 
   const refresh = useCallback(() => {
@@ -181,6 +201,7 @@ export function BaseRouter({
         loading,
         setLoading,
         setView,
+        prefetch,
         navigate,
         refresh,
         cancel

@@ -6,6 +6,8 @@
 
 - Asynchronous navigation
 - Cancelable
+- Page data fetch
+- Prefetch and preview
 
 ## Install
 
