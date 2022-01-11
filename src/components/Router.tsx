@@ -28,7 +28,9 @@ export type LoadStatus = {
 };
 
 export type RouterContext = {
-  history: History;
+  go: History['go'];
+  back: History['back'];
+  forward: History['forward'];
   createHref(to: string): string;
   setView(view: ReactNode): void;
   loading?: LoadStatus;
@@ -147,6 +149,18 @@ export function BaseRouter({
     );
   }, [navigate]);
 
+  const go = useCallback((delta: number) => {
+    history.go(delta);
+  }, []);
+
+  const back = useCallback(() => {
+    history.back();
+  }, []);
+
+  const forward = useCallback(() => {
+    history.forward();
+  }, []);
+
   const createHref = useCallback(
     (to: string) => routerRef.current!.baseUrl + history.createHref(to),
     []
@@ -196,7 +210,9 @@ export function BaseRouter({
   return (
     <Context.Provider
       value={{
-        history,
+        go,
+        back,
+        forward,
         createHref,
         loading,
         setLoading,
