@@ -1,4 +1,4 @@
-import {useRouter} from 'native-router-react';
+import {Link, useRouter} from 'native-router-react';
 
 type Props = {
   error: Error;
@@ -13,6 +13,7 @@ export default function RouterError({error}: Props) {
       <button type="button" onClick={refresh}>
         Refresh
       </button>
+      <Link to='/'>home</Link>
     </section>
   );
 }

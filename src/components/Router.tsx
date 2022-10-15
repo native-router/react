@@ -16,11 +16,11 @@ import {
   createMemoryHistory,
   MemoryHistoryOptions
 } from 'history';
-import type {Location} from '@@/types';
+import type {Route, Location, Router} from '@@/types';
 import {createCurrentGuard, uniqId} from '@@/util';
 import {ViewProvider} from '@@/context';
-import {create as createRouter, Router} from '@@/router';
-import {Route, resolve as defaultResolve} from '@@/resolve';
+import {create as createRouter} from '@@/router';
+import {resolve as defaultResolve} from '@@/resolve';
 
 export type LoadStatus = {
   key: number;
@@ -139,15 +139,22 @@ export function BaseRouter({
 
   const refresh = useCallback(() => {
     const router = routerRef.current!;
-    const {pathname, state, ...restLocation} = history.location;
-    return navigate(
-      createPath({
-        ...restLocation,
-        pathname: pathname.slice(router.baseUrl.length)
-      }),
-      {replace: true, state: locationStackRef.current[state!.index!].state}
-    );
-  }, [navigate]);
+    const {pathname, state} = history.location;
+    const key = uniqId();
+    setLoading({key, status: 'pending'});
+    const l = {
+      ...history.location,
+      pathname: pathname.slice(router.baseUrl.length)
+    };
+    return resolve(router, createPath(l), l)
+      .catch(errorHandler)
+      .then((v) => {
+        viewStackRef.current[state?.index || 0] = v;
+        history.replace(createPath(history.location), history.location.state);
+        setLoading({key, status: 'resolved'});
+      })
+      .catch(rejectLoading(key));
+  }, []);
 
   const go = useCallback((delta: number) => {
     history.go(delta);

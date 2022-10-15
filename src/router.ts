@@ -1,25 +1,7 @@
-import {match as createMatcher, Path, MatchResult} from 'path-to-regexp';
+import {match as createMatcher} from 'path-to-regexp';
+import { Matched, Options, BaseRoute, Router } from './types';
 
-export type Context = {};
-
-export type Route<T = any> = {
-  path?: Path;
-  children?: Route<T>[];
-} & Omit<T, 'path' | 'children'>;
-
-export type Matched<R extends Route = Route> = {route: R} & MatchResult;
-
-export type Options = {
-  baseUrl?: string;
-};
-
-export type Router<R> = {
-  routes: R[];
-  baseUrl: string;
-  options: Options;
-};
-
-export function create<R extends Route = Route>(
+export function create<R extends BaseRoute = BaseRoute>(
   routes: R | R[],
   options: Options = {}
 ): Router<R> {
@@ -30,7 +12,7 @@ export function create<R extends Route = Route>(
   };
 }
 
-export function match<R extends Route = Route>(
+export function match<R extends BaseRoute = BaseRoute>(
   router: Router<R>,
   pathname: string
 ) {
