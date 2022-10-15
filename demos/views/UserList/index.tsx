@@ -1,7 +1,7 @@
 import {css} from '@linaria/core';
-import {PrefetchLink, useData} from 'native-router-react';
+import {useData} from 'native-router-react';
 import {User} from '@/types/user';
-import Preview from '@/components/Preview';
+import PreviewLink from '@/components/PreviewLink';
 
 export default function UserList() {
   const users = useData() as User[];
@@ -17,17 +17,13 @@ export default function UserList() {
       <ul>
         {users.map((user) => (
           <li key={user.id}>
-            <PrefetchLink to={`/users/${user.id}`}>
-              {user.username}
-              <Preview />
-            </PrefetchLink>
+            <PreviewLink to={`/users/${user.id}`}>{user.username}</PreviewLink>
           </li>
         ))}
         <li>
-          <PrefetchLink to="/users/3" data-testid="lost">
+          <PreviewLink to="/users/3" data-testid="lost">
             user 3(lost)
-            <Preview />
-          </PrefetchLink>
+          </PreviewLink>
         </li>
       </ul>
     </div>
