@@ -13,7 +13,7 @@ export default function RouterError({error}: Props) {
       <button type="button" onClick={refresh}>
         Refresh
       </button>
-      <Link to='/'>home</Link>
+      <Link to="/">home</Link>
     </section>
   );
 }

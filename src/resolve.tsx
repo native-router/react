@@ -3,7 +3,7 @@ import type {Location, Route, Router} from '@@/types';
 import {DataProvider, View, ViewProvider} from './context';
 import {match} from './router';
 
-export function resolve(
+export default function resolve(
   router: Router<Route>,
   pathname: string,
   location: Location

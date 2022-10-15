@@ -1,5 +1,5 @@
 import {match as createMatcher} from 'path-to-regexp';
-import { Matched, Options, BaseRoute, Router } from './types';
+import {Matched, Options, BaseRoute, Router} from './types';
 
 export function create<R extends BaseRoute = BaseRoute>(
   routes: R | R[],

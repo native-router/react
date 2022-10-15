@@ -20,7 +20,7 @@ import type {Route, Location, Router} from '@@/types';
 import {createCurrentGuard, uniqId} from '@@/util';
 import {ViewProvider} from '@@/context';
 import {create as createRouter} from '@@/router';
-import {resolve as defaultResolve} from '@@/resolve';
+import defaultResolve from '@@/resolve';
 
 export type LoadStatus = {
   key: number;

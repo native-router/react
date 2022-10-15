@@ -1,6 +1,6 @@
 import type {Path, MatchResult} from 'path-to-regexp';
 import type {Path as HPath} from 'history';
-import { ComponentType } from 'react';
+import {ComponentType} from 'react';
 
 export type Location<T = any> = HPath & {state: T};
 

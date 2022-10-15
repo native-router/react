@@ -1,5 +1,5 @@
 import {css} from '@linaria/core';
-import {Link, PrefetchLink, useData} from 'native-router-react';
+import {PrefetchLink, useData} from 'native-router-react';
 import {User} from '@/types/user';
 import Preview from '@/components/Preview';
 
