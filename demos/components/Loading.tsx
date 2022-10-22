@@ -1,10 +1,10 @@
 import {css} from '@linaria/core';
 import {CSSProperties, ReactPortal, useMemo, useEffect, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {useLoading, useRouter} from 'native-router-react';
+import {cancel, useLoading, useRouter} from 'native-router-react';
 
 export default function Loading(): ReactPortal | null {
-  const {cancel} = useRouter();
+  const router = useRouter();
   const [percent, setPercent] = useState<number>(0);
   const el = useMemo(() => document.createElement('div'), []);
 
@@ -50,7 +50,7 @@ export default function Loading(): ReactPortal | null {
       data-testid="loading"
       type="button"
       title="Click to cancel!"
-      onClick={cancel}
+      onClick={() => cancel(router)}
       className={css`
         position: fixed;
         top: 0;

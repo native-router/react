@@ -1,3 +1,4 @@
+import {createHref, navigate} from '@@/router';
 import type {MouseEvent, ReactNode} from 'react';
 import {useRouter} from './Router';
 
@@ -8,14 +9,15 @@ type Props = {
 };
 
 export default function Link({to, ...rest}: Props) {
-  const {navigate, createHref} = useRouter();
+  const router = useRouter();
 
+  // TODO: 防重复点击
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
-    navigate(to);
+    navigate(router, to);
   }
   return (
     // eslint-disable-next-line jsx-a11y/anchor-has-content
-    <a {...rest} href={createHref(to)} onClick={handleClick} />
+    <a {...rest} href={createHref(router, to)} onClick={handleClick} />
   );
 }

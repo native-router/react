@@ -6,8 +6,9 @@
 
 - Asynchronous navigation
 - Cancelable
-- Page data fetch
+- Page data concurrent fetch
 - Prefetch and preview
+- Most unused code can be tree-shaking
 
 ## Install
 
@@ -63,3 +64,4 @@ export default function App() {
 }
 
 ```
+See [demos](/demos/) for a complete example.

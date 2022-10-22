@@ -1,3 +1,4 @@
+import {commit, createHref, resolve, toLocation} from '@@/router';
 import {
   createContext,
   MouseEvent,
@@ -24,51 +25,49 @@ export function usePrefetch() {
 }
 
 export default function PrefetchLink({to, children, ...rest}: Props) {
-  const {prefetch, createHref} = useRouter();
-  const commitRef = useRef<undefined | (() => void)>();
+  const router = useRouter();
+  const viewPromiseRef = useRef<undefined | Promise<ReactNode>>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
   const [view, setView] = useState<ReactNode>();
+  const location = toLocation(router, to);
 
   function prefetchIt() {
     setLoading(true);
-    const commit = prefetch(to, {
-      done(v) {
-        if (commit !== commitRef.current) return;
-        setLoading(false);
+    viewPromiseRef.current = resolve(router, location)
+      .then((v) => {
         setView(v);
-      },
-      onError(e) {
-        if (commit !== commitRef.current) return;
-        setLoading(false);
+        return v;
+      })
+      .catch((e) => {
         setError(e);
-      }
-    });
-    commitRef.current = commit;
+        throw e;
+      })
+      .finally(() => setLoading(false));
   }
 
   function handlePrefetch() {
-    if (commitRef.current) return;
+    if (viewPromiseRef.current) return;
     prefetchIt();
   }
 
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
-    if (!commitRef.current) {
+    if (!viewPromiseRef.current) {
       prefetchIt();
     }
-    commitRef.current!();
+    commit(router, viewPromiseRef.current!, location);
   }
 
   useEffect(() => {
-    commitRef.current = undefined;
+    viewPromiseRef.current = undefined;
   }, [to]);
 
   return (
     <Context.Provider value={{loading, error, view}}>
       <a
         {...rest}
-        href={createHref(to)}
+        href={createHref(router, to)}
         onMouseEnter={handlePrefetch}
         onClick={handleClick}
       >

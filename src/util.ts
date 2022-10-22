@@ -3,8 +3,10 @@ export function uniqId() {
   return i++;
 }
 
+export function noop() {}
+
 export function cancelPromise() {
-  return new Promise(() => {});
+  return new Promise(noop);
 }
 
 export function createCurrentGuard() {

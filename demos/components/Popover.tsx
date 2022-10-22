@@ -15,9 +15,9 @@ export default function Popover({children}: {children: ReactNode}) {
   return createPortal(
     <div
       className={css`
-        position: absolute;
         position: fixed;
-        transform: scale(0.2) translate(199%, 199%);
+        transform: scale(0.2);
+        transform-origin: bottom right;
         width: 100vw;
         height: 100vh;
         bottom: 0;

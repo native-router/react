@@ -1,4 +1,10 @@
 import {createContext, ReactNode, useContext} from 'react';
+import {
+  createStateContext,
+  useSetterContext,
+  useValueContext
+} from './state-context';
+import type {LoadStatus} from './types';
 
 const ViewContext = createContext<ReactNode>(null);
 
@@ -47,4 +53,12 @@ export function DataProvider({
 export function useData(name?: string) {
   const [data, namedData] = useDataContext();
   return name ? namedData[name] : data;
+}
+
+export const LoadingContext = createStateContext<LoadStatus>();
+export function useLoading() {
+  return useValueContext(LoadingContext);
+}
+export function useLoadingSetter() {
+  return useSetterContext(LoadingContext);
 }

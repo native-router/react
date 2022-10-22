@@ -6,9 +6,10 @@ import react from '@vitejs/plugin-react';
 import linaria from '@linaria/rollup';
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
+const base = buildDemo ? '/native-router-react/' : '/demos/';
 
 export default defineConfig({
-  base: buildDemo ? '/native-router-react/' : '/demos/',
+  base,
   resolve: {
     alias: [
       {
@@ -24,6 +25,9 @@ export default defineConfig({
         replacement: `${path.join(__dirname, 'src/$1')}`
       }
     ]
+  },
+  define: {
+    'process.env.BASE_URL': JSON.stringify(base)
   },
   esbuild: false,
   build: buildDemo

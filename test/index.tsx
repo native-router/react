@@ -12,13 +12,15 @@ declare const $jsdom: any;
 
 describe('Router', () => {
   before(() => {
+    process.env.BASE_URL = '/demos/';
+
     configure({
       asyncUtilTimeout: 999999
     });
 
     const s = global.setTimeout;
     // @ts-ignore
-    global.setTimeout = (fn, delay) => s(fn, Math.max(delay / 1000, 30));
+    global.setTimeout = (fn, delay) => s(fn, Math.max(delay / 1000, 50));
   });
 
   beforeEach(() => {
