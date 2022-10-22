@@ -50,7 +50,6 @@ export type Context<T extends BaseRoute> = {
   matched: Matched<T>[];
   index: number;
   router: RouterInstance<BaseRoute>;
-  pathname: string;
   location: Location;
 };
 
