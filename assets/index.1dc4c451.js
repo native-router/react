@@ -1,1 +1,0 @@
-import"./vendor.3d96c833.js";import{b as a,a as i,j as e}from"./index.93ad3b0e.js";function c(){const{username:s,description:r}=a();return i("div",{className:"d19znui1",children:[e("h1",{children:s}),e("p",{children:r})]})}export{c as default};

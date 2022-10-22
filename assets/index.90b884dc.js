@@ -1,0 +1,1 @@
+import{j as r,a as e}from"./index.59ebf00d.js";import"./vendor.99e26b64.js";function t(){return r("div",{className:"dmoxuxe",children:[e("h1",{children:"About Native Router"}),e("p",{children:"Native Router is another router lib which work like the native browser."})]})}export{t as default};
