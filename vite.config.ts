@@ -34,6 +34,7 @@ export default defineConfig({
     ? {}
     : {
         target: false, // skip vite:esbuild-transpile
+        minify: 'terser',
         sourcemap: true,
         lib: {
           name: 'native-router-react',

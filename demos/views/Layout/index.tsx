@@ -38,13 +38,13 @@ export default function Layout() {
         modes
         <ul>
           <li>
-            <a href="/demos/">history</a>
+            <a href={process.env.BASE_URL}>history</a>
           </li>
           <li>
-            <a href="/demos/?hash">hash</a>
+            <a href={`${process.env.BASE_URL}?hash`}>hash</a>
           </li>
           <li>
-            <a href="/demos/?memory">memory</a>
+            <a href={`${process.env.BASE_URL}?memory`}>memory</a>
           </li>
         </ul>
       </nav>

@@ -27,7 +27,7 @@ export type ResolveView<R extends BaseRoute, V> = (
 
 export type Options<V> = {
   baseUrl?: string;
-  errorHandler?(e: Error): Awaitable<V>;
+  errorHandler?(e: Error): V;
   onLoadingChange?(status?: 'pending' | 'resolved' | 'rejected'): void;
 };
 

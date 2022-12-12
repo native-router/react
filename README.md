@@ -69,13 +69,13 @@ See [demos](/demos/) for a complete example.
 ## API 
 - Link
 
-```ts
+```tsx
   import {Link} from 'native-router-react';
   <Link to="/">home</Link>
 ```
 - refresh
 - useRouter
-```ts
+```tsx
 import {Link, refresh, useRouter} from 'native-router-react';
 
 type Props = {
@@ -94,10 +94,10 @@ export default function RouterError({error}: Props) {
     </section>
   );
 }
-
-
 ```
+
 - PrefetchLink
+
 ```ts
 import {PrefetchLink} from 'native-router-react';
 import {ComponentProps, useState} from 'react';
@@ -120,9 +120,10 @@ export default function PreviewLink({
     </PrefetchLink>
   );
 }
-
 ```
+
 - usePrefetch
+
 ```ts
 import {usePrefetch} from 'native-router-react';
 import Popover from './Popover';
@@ -139,10 +140,12 @@ export default function Preview({visible}: Props) {
   if (view) return <Popover>{view}</Popover>;
   return null;
 }
-
 ```
+
 - cancel
-- useloading
+
+- useLoading
+
 ```ts
 import {css} from '@linaria/core';
 import {CSSProperties, ReactPortal, useMemo, useEffect, useState} from 'react';
@@ -202,7 +205,8 @@ export default function Loading(): ReactPortal | null {
     el
   );
 }
-
 ```
-- path regexp  
+
+- path regexp
+
 See [path-to-regexp](https://github.com/pillarjs/path-to-regexp)
