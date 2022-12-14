@@ -23,7 +23,7 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
     routes: Array.isArray(routes) ? routes : [routes],
     resolveView,
 
-    history: history as History<HistoryState>,
+    history: history as History,
     locationStack: [],
     viewStack: [],
     currentGuard,
@@ -126,7 +126,7 @@ export function commit<R extends BaseRoute = BaseRoute, V = any>(
   location: Location
 ): Promise<void> {
   const {history, currentGuard, onLoadingChange = noop} = router;
-  const nextIndex = (history.location.state?.index || 0) + 1;
+  const nextIndex = ((history.location.state as HistoryState)?.index || 0) + 1;
   if (router.resolving) {
     onLoadingChange();
   }
@@ -160,7 +160,7 @@ export function commitReplace<R extends BaseRoute = BaseRoute, V = any>(
   location: Location
 ): Promise<void> {
   const {history, currentGuard, onLoadingChange = noop} = router;
-  const index = history.location.state?.index || 0;
+  const index = (history.location.state as HistoryState)?.index || 0;
   if (router.resolving) {
     onLoadingChange();
   }
@@ -239,9 +239,8 @@ export function listen<R extends BaseRoute = BaseRoute, V = any>(
   onViewChange: (v: V) => void
 ) {
   const {onLoadingChange = noop, history} = router;
-  const locationStack = history.location.state?.locationStack || [
-    history.location
-  ];
+  const locationStack = (history.location.state as HistoryState)
+    ?.locationStack || [history.location];
   router.locationStack = locationStack;
 
   onLoadingChange('pending');
@@ -259,12 +258,13 @@ export function listen<R extends BaseRoute = BaseRoute, V = any>(
   const rmListener = history.listen(({action, location}) => {
     cancel(router);
 
-    const index = location.state?.index || 0;
+    const state = location.state as HistoryState;
+    const index = state?.index || 0;
     onViewChange(router.viewStack[index]);
 
     if (action === 'POP') {
       history.replace(createPath(history.location), {
-        ...history.location.state,
+        ...state,
         locationStack: router.locationStack
       });
     }

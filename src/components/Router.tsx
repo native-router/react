@@ -40,7 +40,7 @@ function BRouter({
   errorHandler = Promise.reject,
   baseUrl,
   resolveView = defaultResolve
-}: Props & {history: History<HistoryState>}) {
+}: Props & {history: History}) {
   const setLoading = useLoadingSetter();
   const router = useMemo(
     () =>
@@ -68,7 +68,7 @@ function BRouter({
   );
 }
 
-export function BaseRouter(props: Props & {history: History<HistoryState>}) {
+export function BaseRouter(props: Props & {history: History}) {
   return (
     <LoadingContext.Provider>
       <BRouter {...props} />
@@ -77,14 +77,14 @@ export function BaseRouter(props: Props & {history: History<HistoryState>}) {
 }
 
 function RouterComponent(props: Props) {
-  const history = createBrowserHistory() as History<HistoryState>;
+  const history = createBrowserHistory() as History;
   return <BaseRouter {...props} history={history} />;
 }
 
 export {RouterComponent as Router};
 
 export function HashRouter(props: Props) {
-  const history = createHashHistory() as History<HistoryState>;
+  const history = createHashHistory() as History;
   return <BaseRouter {...props} history={history} />;
 }
 
@@ -96,7 +96,7 @@ export function MemoryRouter({
   const history = createMemoryHistory({
     initialEntries,
     initialIndex
-  }) as History<HistoryState>;
+  }) as History;
   return <BaseRouter {...props} history={history} />;
 }
 

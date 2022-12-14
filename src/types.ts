@@ -37,7 +37,7 @@ export type RequiredOf<T, K extends keyof T> = Required<Pick<T, K>> &
 export type RouterInstance<R extends BaseRoute, V = any> = {
   routes: R[];
   baseUrl: string;
-  history: History<HistoryState>;
+  history: History;
   viewStack: V[];
   locationStack: Location[];
   resolveView: ResolveView<R, V>;
