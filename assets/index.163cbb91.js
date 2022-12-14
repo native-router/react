@@ -1,4 +1,4 @@
-import { j as jsxs, a as jsx, L as Link, V as View } from './index.40c0a190.js';
+import { j as jsxs, a as jsx, L as Link, V as View } from './index.544e7c04.js';
 
 var index_ghsrbq = '';
 
@@ -46,6 +46,9 @@ function Layout() {
             children: "memory"
           })
         })]
+      }), /*#__PURE__*/jsx("a", {
+        href: "//wmzy.github.io/native-router-react/doc",
+        children: "docs"
       })]
     }), /*#__PURE__*/jsx("main", {
       className: "m1o95z1i",
