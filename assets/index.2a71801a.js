@@ -1,1 +1,0 @@
-import{a as e,j as r}from"./index.49cabb5d.js";import"./vendor.99e26b64.js";const s="ccompzo";function a({className:o}){return e("div",{className:o,children:"Hello World!"})}function t(){return r("div",{className:"d19ojwk0",children:[e("h1",{children:"Welcome to Native Router"}),e(a,{className:s})]})}export{t as default};
