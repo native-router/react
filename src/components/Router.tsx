@@ -13,18 +13,16 @@ import {
   createMemoryHistory,
   MemoryHistoryOptions
 } from 'history';
-import type {Route, Location, RouterInstance} from '@@/types';
+import type {Route, RouterInstance} from '@@/types';
 import {LoadingContext, useLoadingSetter, ViewProvider} from '@@/context';
 import {create as createRouter, listen} from '@@/router';
 import defaultResolve from '@@/resolve-view';
 import {uniqId} from '@@/util';
 
-export const RouterContext = createContext<RouterInstance<
-  Route,
-  ReactNode
-> | null>(null);
+const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
+  null
+);
 
-type HistoryState = {locationStack: Location[]; index?: number} | null;
 type Props = {
   children: ReactNode;
   routes: Route[] | Route;
@@ -68,6 +66,10 @@ function BRouter({
   );
 }
 
+/**
+ * Base Router Component.
+ * @group Components
+ */
 export function BaseRouter(props: Props & {history: History}) {
   return (
     <LoadingContext.Provider>
@@ -76,6 +78,10 @@ export function BaseRouter(props: Props & {history: History}) {
   );
 }
 
+/**
+ * History mode Router Component.
+ * @group Components
+ */
 function RouterComponent(props: Props) {
   const history = createBrowserHistory() as History;
   return <BaseRouter {...props} history={history} />;
@@ -83,11 +89,19 @@ function RouterComponent(props: Props) {
 
 export {RouterComponent as Router};
 
+/**
+ * Hash mode Router Component.
+ * @group Components
+ */
 export function HashRouter(props: Props) {
   const history = createHashHistory() as History;
   return <BaseRouter {...props} history={history} />;
 }
 
+/**
+ * Memory mode Router Component.
+ * @group Components
+ */
 export function MemoryRouter({
   initialEntries,
   initialIndex,
@@ -100,6 +114,11 @@ export function MemoryRouter({
   return <BaseRouter {...props} history={history} />;
 }
 
+/**
+ * Get Router instance.
+ * @group Hooks
+ * @returns Router Instance
+ */
 export function useRouter() {
   return useContext(RouterContext)!;
 }

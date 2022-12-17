@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react';
 import linaria from '@linaria/rollup';
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
-const base = buildDemo ? '/native-router-react/' : '/demos/';
+const base = buildDemo ? '/native-router-react/demos/' : '/demos/';
 
 export default defineConfig({
   base,
@@ -31,7 +31,9 @@ export default defineConfig({
   },
   esbuild: false,
   build: buildDemo
-    ? {}
+    ? {
+        outDir: 'dist/demos'
+      }
     : {
         target: false, // skip vite:esbuild-transpile
         minify: 'terser',

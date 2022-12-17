@@ -8,6 +8,11 @@ type Props = {
   children?: ReactNode;
 };
 
+/**
+ * Link for navigate in app.
+ * @param props
+ * @group Components
+ */
 export default function Link({to, ...rest}: Props) {
   const router = useRouter();
 

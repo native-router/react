@@ -20,10 +20,19 @@ type PrefetchLinkContext = {loading: boolean; error?: Error; view?: ReactNode};
 
 const Context = createContext<PrefetchLinkContext>({loading: false});
 
+/**
+ * Get the prefetch context. Use for render a preview view.
+ * @group Hooks
+ */
 export function usePrefetch() {
   return useContext(Context);
 }
 
+/**
+ * Link support hover prefetch.
+ * @param props
+ * @group Components
+ */
 export default function PrefetchLink({to, children, ...rest}: Props) {
   const router = useRouter();
   const viewPromiseRef = useRef<undefined | Promise<ReactNode>>();

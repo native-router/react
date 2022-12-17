@@ -2,6 +2,13 @@ import type {ComponentType} from 'react';
 import type {Matched, ResolveViewContext, Route} from '@@/types';
 import {DataProvider, View, ViewProvider} from './context';
 
+/**
+ * The default implementation of resolve view
+ * @param matched the matched result
+ * @param viewContext resolved view context
+ * @returns the resolve view
+ * @see {@link create router->create}
+ */
 export default function resolveView(
   matched: Matched<Route>[],
   {router, location}: ResolveViewContext<Route>

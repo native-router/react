@@ -12,10 +12,19 @@ export function ViewProvider(props: {children: ReactNode; value: ReactNode}) {
   return <ViewContext.Provider {...props} />;
 }
 
+/**
+ * @group Hooks
+ * @see {@link View View Component}
+ */
 export function useView() {
   return useContext(ViewContext);
 }
 
+/**
+ * Used for route component to render child route component.
+ * It just render the return of {@link useView}
+ * @group Components
+ */
 export function View() {
   const view = useView();
   return <>{view}</>;
@@ -23,10 +32,13 @@ export function View() {
 
 const DataContext = createContext<[any, Record<string, any>]>([undefined, {}]);
 
-export function useDataContext() {
+function useDataContext() {
   return useContext(DataContext);
 }
 
+/**
+ * @group Hooks
+ */
 export function useNamedData() {
   return useDataContext()[1];
 }
@@ -50,15 +62,26 @@ export function DataProvider({
   );
 }
 
+/**
+ * @group Hooks
+ */
 export function useData(name?: string) {
   const [data, namedData] = useDataContext();
   return name ? namedData[name] : data;
 }
 
 export const LoadingContext = createStateContext<LoadStatus>();
+
+/**
+ * @group Hooks
+ */
 export function useLoading() {
   return useValueContext(LoadingContext);
 }
+
+/**
+ * @group Hooks
+ */
 export function useLoadingSetter() {
   return useSetterContext(LoadingContext);
 }
