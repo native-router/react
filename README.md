@@ -68,4 +68,4 @@ See [demos](/demos/) for a complete example.
 
 ## Docs 
 
-[API](https://wmzy.github.io/native-router-react/doc/modules.html)
+[API](https://wmzy.github.io/native-router-react/modules.html)

@@ -47,7 +47,7 @@ export default function Layout() {
             <a href={`${process.env.BASE_URL}?memory`}>memory</a>
           </li>
         </ul>
-        <a href="//wmzy.github.io/native-router-react/doc">docs</a>
+        <a href="//wmzy.github.io/native-router-react/">docs</a>
       </nav>
       <main
         className={css`

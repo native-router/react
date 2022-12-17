@@ -1,6 +1,6 @@
 import type {ComponentType} from 'react';
 import type {Matched, ResolveViewContext, Route} from '@@/types';
-import {DataProvider, View, ViewProvider} from './context';
+import {DataProvider, MatchedContext, View, ViewProvider} from './context';
 
 /**
  * The default implementation of resolve view
@@ -30,7 +30,9 @@ export default function resolveView(
       return Promise.all([route.data?.(params, ctx), resolveComponent()]).then(
         ([data, C]) => (
           <DataProvider data={data} name={route.name}>
-            <C />
+            <MatchedContext.Provider value={ctx}>
+              <C />
+            </MatchedContext.Provider>
           </DataProvider>
         )
       );

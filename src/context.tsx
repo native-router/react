@@ -4,7 +4,7 @@ import {
   useSetterContext,
   useValueContext
 } from './state-context';
-import type {LoadStatus} from './types';
+import type {Context, LoadStatus, Route} from './types';
 
 const ViewContext = createContext<ReactNode>(null);
 
@@ -60,6 +60,17 @@ export function DataProvider({
       {children}
     </DataContext.Provider>
   );
+}
+
+export const MatchedContext = createContext<Context<Route> | undefined>(
+  undefined
+);
+
+/**
+ * @group Hooks
+ */
+export function useMatched() {
+  return useContext(MatchedContext)!;
 }
 
 /**
