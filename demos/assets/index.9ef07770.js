@@ -1,4 +1,4 @@
-import { a as jsx } from './index.3fbfe50f.js';
+import { a as jsx } from './index.2d60cc0b.js';
 
 var index_p2t6g1 = '';
 

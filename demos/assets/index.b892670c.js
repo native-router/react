@@ -1,4 +1,4 @@
-import { f as useData, j as jsxs, a as jsx } from './index.3fbfe50f.js';
+import { f as useData, j as jsxs, a as jsx } from './index.2d60cc0b.js';
 
 var index_bccy99 = '';
 

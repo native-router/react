@@ -7950,6 +7950,7 @@ function DataProvider({
     children: children
   });
 }
+const MatchedContext = /*#__PURE__*/react.exports.createContext(undefined);
 
 /**
  * @group Hooks
@@ -8671,7 +8672,10 @@ function resolveView(matched, {
     return Promise.all([route.data?.(params, ctx), resolveComponent()]).then(([data, C]) => /*#__PURE__*/jsx(DataProvider, {
       data: data,
       name: route.name,
-      children: /*#__PURE__*/jsx(C, {})
+      children: /*#__PURE__*/jsx(MatchedContext.Provider, {
+        value: ctx,
+        children: /*#__PURE__*/jsx(C, {})
+      })
     }));
   })).then(views => views.reverse().reduce((acc, view) => /*#__PURE__*/jsx(ViewProvider, {
     value: acc,
@@ -8910,26 +8914,26 @@ async function fetchById(id) {
 function App() {
   const mode = window.location.search.slice(1);
   const routes = {
-    component: () => __vitePreload(() => import('./index.62b61f6c.js'),true?["assets/index.62b61f6c.js","assets/index.ebf4e2dd.css"]:void 0),
+    component: () => __vitePreload(() => import('./index.dc6730de.js'),true?["assets/index.dc6730de.js","assets/index.ebf4e2dd.css"]:void 0),
     children: [{
       path: '/',
-      component: () => __vitePreload(() => import('./index.8773430e.js'),true?["assets/index.8773430e.js","assets/index.04ec1ac7.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.970a69b2.js'),true?["assets/index.970a69b2.js","assets/index.04ec1ac7.css"]:void 0)
     }, {
       path: '/users',
-      component: () => __vitePreload(() => import('./index.5a88af7e.js'),true?["assets/index.5a88af7e.js","assets/index.358e9db0.css"]:void 0),
+      component: () => __vitePreload(() => import('./index.aec1a5ff.js'),true?["assets/index.aec1a5ff.js","assets/index.358e9db0.css"]:void 0),
       data: fetchList
     }, {
       path: '/users/:id',
-      component: () => __vitePreload(() => import('./index.572f0fc8.js'),true?["assets/index.572f0fc8.js","assets/index.d2976a17.css"]:void 0),
+      component: () => __vitePreload(() => import('./index.b892670c.js'),true?["assets/index.b892670c.js","assets/index.d2976a17.css"]:void 0),
       data: ({
         id
       }) => fetchById(+id)
     }, {
       path: '/help',
-      component: () => __vitePreload(() => import('./index.9d3730b8.js'),true?["assets/index.9d3730b8.js","assets/index.ba0ba40f.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.9ef07770.js'),true?["assets/index.9ef07770.js","assets/index.ba0ba40f.css"]:void 0)
     }, {
       path: '/about',
-      component: () => __vitePreload(() => import('./index.58b84e85.js'),true?["assets/index.58b84e85.js","assets/index.c2fbffe4.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.79792ec5.js'),true?["assets/index.79792ec5.js","assets/index.c2fbffe4.css"]:void 0)
     }]
   };
   if (mode === 'hash') {
