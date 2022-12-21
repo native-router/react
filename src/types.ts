@@ -27,7 +27,7 @@ export type ResolveView<R extends BaseRoute, V> = (
 
 export type Options<V> = {
   baseUrl?: string;
-  errorHandler?(e: Error): V;
+  errorHandler?(e: Error): V | Promise<V>;
   onLoadingChange?(status?: 'pending' | 'resolved' | 'rejected'): void;
 };
 

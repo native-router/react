@@ -13,9 +13,9 @@ import {
   createMemoryHistory,
   MemoryHistoryOptions
 } from 'history';
-import type {Route, RouterInstance} from '@@/types';
+import type {Options, ResolveView, Route, RouterInstance} from '@@/types';
 import {LoadingContext, useLoadingSetter, ViewProvider} from '@@/context';
-import {create as createRouter, listen} from '@@/router';
+import {create, listen} from '@@/router';
 import defaultResolve from '@@/resolve-view';
 import {uniqId} from '@@/util';
 
@@ -31,50 +31,65 @@ type Props = {
   errorHandler?: (error: Error) => ReactNode;
 };
 
-function BRouter({
-  routes,
-  history,
-  children,
-  errorHandler = Promise.reject,
-  baseUrl,
-  resolveView = defaultResolve
-}: Props & {history: History}) {
+function BRouter({children}: {children: ReactNode}) {
   const setLoading = useLoadingSetter();
-  const router = useMemo(
-    () =>
-      createRouter(routes, history, resolveView, {
-        baseUrl,
-        errorHandler,
-        onLoadingChange(status?) {
-          setLoading(status && {key: uniqId(), status});
-        }
-      }),
-    [routes, history, resolveView, baseUrl, errorHandler]
-  );
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  const router = useRouter();
+
+  router.onLoadingChange = (status?) => {
+    setLoading(status && {key: uniqId(), status});
+  };
 
   const [view, setView] = useState<ReactNode>();
+
   useEffect(() => listen(router, setView), [router]);
 
-  return (
-    <RouterContext.Provider value={router}>
-      {typeof children === 'undefined' ? (
-        view
-      ) : (
-        <ViewProvider value={view}>{children}</ViewProvider>
-      )}
-    </RouterContext.Provider>
+  return children === 'undefined' ? (
+    <>{view}</>
+  ) : (
+    <ViewProvider value={view}>{children}</ViewProvider>
   );
+}
+
+export function createRouter(
+  routes: Route | Route[],
+  history: History,
+  {
+    resolveView = defaultResolve,
+    ...options
+  }: Options<ReactNode> & {resolveView?: ResolveView<Route, ReactNode>} = {}
+): RouterInstance<Route, ReactNode> {
+  return create(routes, history, resolveView, options);
 }
 
 /**
  * Base Router Component.
  * @group Components
  */
-export function BaseRouter(props: Props & {history: History}) {
+export function Router({
+  router,
+  ...props
+}: {
+  children: ReactNode;
+  router: RouterInstance<Route, ReactNode>;
+}) {
   return (
     <LoadingContext.Provider>
-      <BRouter {...props} />
+      <RouterContext.Provider value={router}>
+        <BRouter {...props} />
+      </RouterContext.Provider>
     </LoadingContext.Provider>
+  );
+}
+
+function useNewRouter(
+  routes: Route | Route[],
+  createHistory: () => History,
+  options: Options<ReactNode>
+) {
+  return useMemo(
+    () => createRouter(routes, createHistory(), options),
+    [routes, createHistory, ...Object.keys(options), ...Object.values(options)]
   );
 }
 
@@ -82,20 +97,18 @@ export function BaseRouter(props: Props & {history: History}) {
  * History mode Router Component.
  * @group Components
  */
-function RouterComponent(props: Props) {
-  const history = createBrowserHistory() as History;
-  return <BaseRouter {...props} history={history} />;
+export function HistoryRouter({children, routes, ...options}: Props) {
+  const router = useNewRouter(routes, createBrowserHistory, options);
+  return <Router router={router}>{children}</Router>;
 }
-
-export {RouterComponent as Router};
 
 /**
  * Hash mode Router Component.
  * @group Components
  */
-export function HashRouter(props: Props) {
-  const history = createHashHistory() as History;
-  return <BaseRouter {...props} history={history} />;
+export function HashRouter({children, routes, ...options}: Props) {
+  const router = useNewRouter(routes, createHashHistory, options);
+  return <Router router={router}>{children}</Router>;
 }
 
 /**
@@ -105,13 +118,16 @@ export function HashRouter(props: Props) {
 export function MemoryRouter({
   initialEntries,
   initialIndex,
-  ...props
+  children,
+  routes,
+  ...options
 }: Props & MemoryHistoryOptions) {
-  const history = createMemoryHistory({
-    initialEntries,
-    initialIndex
-  }) as History;
-  return <BaseRouter {...props} history={history} />;
+  const createHistory = useMemo(
+    () => () => createMemoryHistory({initialEntries, initialIndex}),
+    [initialEntries, initialIndex]
+  );
+  const router = useNewRouter(routes, createHistory, options);
+  return <Router router={router}>{children}</Router>;
 }
 
 /**

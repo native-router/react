@@ -2,7 +2,7 @@ import {
   View,
   MemoryRouter,
   HashRouter,
-  Router,
+  HistoryRouter,
   Route
 } from 'native-router-react';
 import Loading from '@/components/Loading';
@@ -65,7 +65,7 @@ export default function App() {
   }
 
   return (
-    <Router
+    <HistoryRouter
       routes={routes}
       // baseUrl={import.meta.env.BASE_URL.slice(0, -1)}
       baseUrl={process.env.BASE_URL?.slice(0, -1)}
@@ -73,6 +73,6 @@ export default function App() {
     >
       <View />
       <Loading />
-    </Router>
+    </HistoryRouter>
   );
 }

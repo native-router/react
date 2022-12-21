@@ -39,6 +39,7 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
     currentGuard,
     cancelAll,
 
+    errorHandler: Promise.reject,
     ...options,
     baseUrl: options?.baseUrl || ''
   };
