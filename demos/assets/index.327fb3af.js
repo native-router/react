@@ -1,4 +1,4 @@
-import { a as jsx, j as jsxs } from './index.2d60cc0b.js';
+import { a as jsx, j as jsxs } from './index.b06dda5f.js';
 
 var styles_t8pqps = '';
 

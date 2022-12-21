@@ -8392,6 +8392,7 @@ function create(routes, history, resolveView, options) {
     viewStack: [],
     currentGuard,
     cancelAll,
+    errorHandler: Promise.reject,
     ...options,
     baseUrl: options?.baseUrl || ''
   };
@@ -8685,56 +8686,67 @@ function resolveView(matched, {
 
 const RouterContext = /*#__PURE__*/react.exports.createContext(null);
 function BRouter({
-  routes,
-  history,
-  children,
-  errorHandler = Promise.reject,
-  baseUrl,
-  resolveView: resolveView$1 = resolveView
+  children
 }) {
   const setLoading = useLoadingSetter();
-  const router = react.exports.useMemo(() => create(routes, history, resolveView$1, {
-    baseUrl,
-    errorHandler,
-    onLoadingChange(status) {
-      setLoading(status && {
-        key: uniqId(),
-        status
-      });
-    }
-  }), [routes, history, resolveView$1, baseUrl, errorHandler]);
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  const router = useRouter();
+  router.onLoadingChange = status => {
+    setLoading(status && {
+      key: uniqId(),
+      status
+    });
+  };
   const [view, setView] = react.exports.useState();
   react.exports.useEffect(() => listen(router, setView), [router]);
-  return /*#__PURE__*/jsx(RouterContext.Provider, {
-    value: router,
-    children: typeof children === 'undefined' ? view : /*#__PURE__*/jsx(ViewProvider, {
-      value: view,
-      children: children
-    })
+  return children === 'undefined' ? /*#__PURE__*/jsx(Fragment, {
+    children: view
+  }) : /*#__PURE__*/jsx(ViewProvider, {
+    value: view,
+    children: children
   });
+}
+function createRouter(routes, history, {
+  resolveView: resolveView$1 = resolveView,
+  ...options
+} = {}) {
+  return create(routes, history, resolveView$1, options);
 }
 
 /**
  * Base Router Component.
  * @group Components
  */
-function BaseRouter(props) {
+function Router({
+  router,
+  ...props
+}) {
   return /*#__PURE__*/jsx(LoadingContext.Provider, {
-    children: /*#__PURE__*/jsx(BRouter, {
-      ...props
+    children: /*#__PURE__*/jsx(RouterContext.Provider, {
+      value: router,
+      children: /*#__PURE__*/jsx(BRouter, {
+        ...props
+      })
     })
   });
+}
+function useNewRouter(routes, createHistory, options) {
+  return react.exports.useMemo(() => createRouter(routes, createHistory(), options), [routes, createHistory, ...Object.keys(options), ...Object.values(options)]);
 }
 
 /**
  * History mode Router Component.
  * @group Components
  */
-function RouterComponent(props) {
-  const history = createBrowserHistory();
-  return /*#__PURE__*/jsx(BaseRouter, {
-    ...props,
-    history: history
+function HistoryRouter({
+  children,
+  routes,
+  ...options
+}) {
+  const router = useNewRouter(routes, createBrowserHistory, options);
+  return /*#__PURE__*/jsx(Router, {
+    router: router,
+    children: children
   });
 }
 
@@ -8742,11 +8754,15 @@ function RouterComponent(props) {
  * Hash mode Router Component.
  * @group Components
  */
-function HashRouter(props) {
-  const history = createHashHistory();
-  return /*#__PURE__*/jsx(BaseRouter, {
-    ...props,
-    history: history
+function HashRouter({
+  children,
+  routes,
+  ...options
+}) {
+  const router = useNewRouter(routes, createHashHistory, options);
+  return /*#__PURE__*/jsx(Router, {
+    router: router,
+    children: children
   });
 }
 
@@ -8757,15 +8773,18 @@ function HashRouter(props) {
 function MemoryRouter({
   initialEntries,
   initialIndex,
-  ...props
+  children,
+  routes,
+  ...options
 }) {
-  const history = createMemoryHistory({
+  const createHistory = react.exports.useMemo(() => () => createMemoryHistory({
     initialEntries,
     initialIndex
-  });
-  return /*#__PURE__*/jsx(BaseRouter, {
-    ...props,
-    history: history
+  }), [initialEntries, initialIndex]);
+  const router = useNewRouter(routes, createHistory, options);
+  return /*#__PURE__*/jsx(Router, {
+    router: router,
+    children: children
   });
 }
 
@@ -8914,26 +8933,26 @@ async function fetchById(id) {
 function App() {
   const mode = window.location.search.slice(1);
   const routes = {
-    component: () => __vitePreload(() => import('./index.dc6730de.js'),true?["assets/index.dc6730de.js","assets/index.ebf4e2dd.css"]:void 0),
+    component: () => __vitePreload(() => import('./index.98886351.js'),true?["assets/index.98886351.js","assets/index.ebf4e2dd.css"]:void 0),
     children: [{
       path: '/',
-      component: () => __vitePreload(() => import('./index.970a69b2.js'),true?["assets/index.970a69b2.js","assets/index.04ec1ac7.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.327fb3af.js'),true?["assets/index.327fb3af.js","assets/index.04ec1ac7.css"]:void 0)
     }, {
       path: '/users',
-      component: () => __vitePreload(() => import('./index.aec1a5ff.js'),true?["assets/index.aec1a5ff.js","assets/index.358e9db0.css"]:void 0),
+      component: () => __vitePreload(() => import('./index.bca01da2.js'),true?["assets/index.bca01da2.js","assets/index.358e9db0.css"]:void 0),
       data: fetchList
     }, {
       path: '/users/:id',
-      component: () => __vitePreload(() => import('./index.b892670c.js'),true?["assets/index.b892670c.js","assets/index.d2976a17.css"]:void 0),
+      component: () => __vitePreload(() => import('./index.9f184bb3.js'),true?["assets/index.9f184bb3.js","assets/index.d2976a17.css"]:void 0),
       data: ({
         id
       }) => fetchById(+id)
     }, {
       path: '/help',
-      component: () => __vitePreload(() => import('./index.9ef07770.js'),true?["assets/index.9ef07770.js","assets/index.ba0ba40f.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.4d4d2518.js'),true?["assets/index.4d4d2518.js","assets/index.ba0ba40f.css"]:void 0)
     }, {
       path: '/about',
-      component: () => __vitePreload(() => import('./index.79792ec5.js'),true?["assets/index.79792ec5.js","assets/index.c2fbffe4.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.2eb05e4d.js'),true?["assets/index.2eb05e4d.js","assets/index.c2fbffe4.css"]:void 0)
     }]
   };
   if (mode === 'hash') {
@@ -8955,7 +8974,7 @@ function App() {
       children: [/*#__PURE__*/jsx(View, {}), /*#__PURE__*/jsx(Loading, {})]
     });
   }
-  return /*#__PURE__*/jsxs(RouterComponent, {
+  return /*#__PURE__*/jsxs(HistoryRouter, {
     routes: routes
     // baseUrl={"/native-router-react/demos/".slice(0, -1)}
     ,
