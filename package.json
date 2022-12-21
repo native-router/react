@@ -1,9 +1,11 @@
 {
   "name": "native-router-react",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "main": "dist/native-router-react.es.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "start": "vite",
     "build": "vite build && tsc -p tsconfig.production.json && tsc-alias -p tsconfig.production.json",
