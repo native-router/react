@@ -141,10 +141,12 @@ export function resolve<R extends BaseRoute = BaseRoute, V = any>(
   location: Location
 ) {
   const matched = match<R>(router, location.pathname);
-  if (!matched) return Promise.reject(new Error('Not Found'));
-
-  const {resolveView} = router;
-  return resolveView(matched, {router, location}).catch(router.errorHandler);
+  const {resolveView, errorHandler} = router;
+  return (
+    matched
+      ? resolveView(matched, {router, location})
+      : Promise.reject(new Error('Not Found'))
+  ).catch(errorHandler);
 }
 
 /**
