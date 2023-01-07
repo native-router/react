@@ -1,6 +1,12 @@
 import type {Path, MatchResult} from 'path-to-regexp';
 import type {History, Path as HPath} from 'history';
-import type {ComponentType, Context as ReactContext, ReactNode} from 'react';
+import type {
+  AnchorHTMLAttributes,
+  ComponentType,
+  Context as ReactContext,
+  DetailedHTMLProps,
+  ReactNode
+} from 'react';
 
 export type Location<T = any> = HPath & {state: T};
 
@@ -72,3 +78,11 @@ export type LoadStatus = {
   key: number;
   status: 'pending' | 'resolved' | 'rejected';
 };
+
+export type LinkProps = {
+  to: string;
+  children?: ReactNode;
+} & DetailedHTMLProps<
+  AnchorHTMLAttributes<HTMLAnchorElement>,
+  HTMLAnchorElement
+>;

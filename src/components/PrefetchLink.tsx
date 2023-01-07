@@ -1,4 +1,5 @@
 import {commit, createHref, resolve, toLocation} from '@@/router';
+import type {LinkProps} from '@@/types';
 import {
   createContext,
   MouseEvent,
@@ -9,12 +10,6 @@ import {
   useState
 } from 'react';
 import {useRouter} from './Router';
-
-type Props = {
-  to: string;
-  // eslint-disable-next-line react/require-default-props
-  children?: ReactNode;
-};
 
 type PrefetchLinkContext = {loading: boolean; error?: Error; view?: ReactNode};
 
@@ -33,7 +28,7 @@ export function usePrefetch() {
  * @param props
  * @group Components
  */
-export default function PrefetchLink({to, children, ...rest}: Props) {
+export default function PrefetchLink({to, children, ...rest}: LinkProps) {
   const router = useRouter();
   const viewPromiseRef = useRef<undefined | Promise<ReactNode>>();
   const [loading, setLoading] = useState(false);
