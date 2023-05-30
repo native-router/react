@@ -1,4 +1,4 @@
-import { u as useRouter, r as react, t as toLocation, a as jsx, c as createHref, b as commit, d as resolve, e as reactDom, j as jsxs, f as useData } from './index.0b2ae2f1.js';
+import { u as useRouter, r as react, t as toLocation, a as jsx, c as createHref, b as commit, d as resolve, e as reactDom, j as jsxs, f as useData } from './index.9463bbcd.js';
 
 const Context = /*#__PURE__*/react.exports.createContext({
   loading: false
