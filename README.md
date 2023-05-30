@@ -19,7 +19,7 @@ npm i native-router-react
 ## Usage
 
 ```tsx
-import {View, Router} from 'native-router-react';
+import {View, HistoryRouter as Router} from 'native-router-react';
 import Loading from '@/components/Loading';
 import RouterError from '@/components/RouterError';
 import * as userService from '@/services/user';
