@@ -60,12 +60,14 @@ export default function PrefetchLink({to, children, ...rest}: LinkProps) {
     if (!viewPromiseRef.current) {
       prefetchIt();
     }
-    commit(router, viewPromiseRef.current!, location);
+    commit(router, viewPromiseRef.current!, location).finally(
+      () => (viewPromiseRef.current = undefined)
+    );
   }
 
   useEffect(() => {
     viewPromiseRef.current = undefined;
-  }, [to]);
+  }, [to, router]);
 
   return (
     <Context.Provider value={{loading, error, view}}>

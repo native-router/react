@@ -1,24 +1,24 @@
 # Native Router React
 
-> A route close to the native experience for react.
+> 接近原生体验的 React 路由库。
 
-English | [简体中文](./README-zh_CN.md)
+[English](./README.md) | 简体中文
 
-## Features
+## 特性
 
-- Asynchronous navigation
-- Cancelable
-- Page data concurrent fetch
-- Link prefetch and preview
-- Most unused features can be tree-shaking
+- 异步导航
+- 可取消
+- 页面视图和数据并发拉取
+- 链接页面预加载及预览
+- 轻量小巧，Tree-Shaking 友好
 
-## Install
+## 安装
 
 ```bash
 npm i native-router-react
 ```
 
-## Usage
+## 使用
 
 ```tsx
 import {View, HistoryRouter as Router} from 'native-router-react';
@@ -66,8 +66,9 @@ export default function App() {
 }
 
 ```
-See [demos](/demos/) for a complete example.
 
-## Documentation 
+查看 [完整示例](/demos/)。
+
+## 文档 
 
 [API](https://wmzy.github.io/native-router-react/modules.html)
