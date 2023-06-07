@@ -8928,26 +8928,26 @@ async function fetchById(id) {
 function App() {
   const mode = window.location.search.slice(1);
   const routes = {
-    component: () => __vitePreload(() => import('./index.c6c8d52a.js'),true?["assets/index.c6c8d52a.js","assets/index.ebf4e2dd.css"]:void 0),
+    component: () => __vitePreload(() => import('./index.97c54d66.js'),true?["assets/index.97c54d66.js","assets/index.ebf4e2dd.css"]:void 0),
     children: [{
       path: '/',
-      component: () => __vitePreload(() => import('./index.1679577d.js'),true?["assets/index.1679577d.js","assets/index.04ec1ac7.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.0b691ef3.js'),true?["assets/index.0b691ef3.js","assets/index.04ec1ac7.css"]:void 0)
     }, {
       path: '/users',
-      component: () => __vitePreload(() => import('./index.04b5a5f9.js'),true?["assets/index.04b5a5f9.js","assets/index.358e9db0.css"]:void 0),
+      component: () => __vitePreload(() => import('./index.6dc1baa5.js'),true?["assets/index.6dc1baa5.js","assets/index.358e9db0.css"]:void 0),
       data: fetchList
     }, {
       path: '/users/:id',
-      component: () => __vitePreload(() => import('./index.30c2029c.js'),true?["assets/index.30c2029c.js","assets/index.d2976a17.css"]:void 0),
+      component: () => __vitePreload(() => import('./index.01cf072b.js'),true?["assets/index.01cf072b.js","assets/index.d2976a17.css"]:void 0),
       data: ({
         id
       }) => fetchById(+id)
     }, {
       path: '/help',
-      component: () => __vitePreload(() => import('./index.1515325d.js'),true?["assets/index.1515325d.js","assets/index.ba0ba40f.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.793d7b1e.js'),true?["assets/index.793d7b1e.js","assets/index.ba0ba40f.css"]:void 0)
     }, {
       path: '/about',
-      component: () => __vitePreload(() => import('./index.961aaa6e.js'),true?["assets/index.961aaa6e.js","assets/index.c2fbffe4.css"]:void 0)
+      component: () => __vitePreload(() => import('./index.0ba98f80.js'),true?["assets/index.0ba98f80.js","assets/index.c2fbffe4.css"]:void 0)
     }]
   };
   if (mode === 'hash') {

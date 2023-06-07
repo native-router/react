@@ -1,4 +1,4 @@
-import { u as useRouter, r as react, t as toLocation, a as jsx, c as createHref, b as commit, d as resolve, e as reactDom, j as jsxs, f as useData } from './index.9463bbcd.js';
+import { u as useRouter, r as react, t as toLocation, a as jsx, c as createHref, b as commit, d as resolve, e as reactDom, j as jsxs, f as useData } from './index.6a72dc84.js';
 
 const Context = /*#__PURE__*/react.exports.createContext({
   loading: false
@@ -47,11 +47,11 @@ function PrefetchLink({
     if (!viewPromiseRef.current) {
       prefetchIt();
     }
-    commit(router, viewPromiseRef.current, location);
+    commit(router, viewPromiseRef.current, location).finally(() => viewPromiseRef.current = undefined);
   }
   react.exports.useEffect(() => {
     viewPromiseRef.current = undefined;
-  }, [to]);
+  }, [to, router]);
   return /*#__PURE__*/jsx(Context.Provider, {
     value: {
       loading,

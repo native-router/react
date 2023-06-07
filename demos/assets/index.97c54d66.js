@@ -1,4 +1,4 @@
-import { j as jsxs, a as jsx, L as Link, V as View } from './index.9463bbcd.js';
+import { j as jsxs, a as jsx, L as Link, V as View } from './index.6a72dc84.js';
 
 var index_ghsrbq = '';
 
