@@ -2,6 +2,17 @@
   "name": "native-router-react",
   "version": "0.8.3",
   "main": "dist/native-router-react.es.js",
+  "keywords": [
+    "react",
+    "router",
+    "react router",
+    "react-router",
+    "async",
+    "tiny",
+    "data-fetching",
+    "prefetch",
+    "preview"
+  ],
   "types": "dist/index.d.ts",
   "files": [
     "dist"
