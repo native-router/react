@@ -1,5 +1,5 @@
 [![npm](https://img.shields.io/npm/v/native-router-react.svg)](https://www.npmjs.com/package/native-router-react)
-![Build Status](https://github.com/wmzy/native-router-react/actions/workflows/ci.yml/badge.svg)
+[![Build Status](https://github.com/wmzy/native-router-react/actions/workflows/ci.yml/badge.svg)](https://github.com/wmzy/native-router-react/actions)
 [![Coverage](https://img.shields.io/codecov/c/github/wmzy/native-router-react.svg)](https://codecov.io/gh/wmzy/native-router-react)
 [![install size](https://packagephobia.now.sh/badge?p=native-router-react)](https://packagephobia.now.sh/result?p=native-router-react)
 

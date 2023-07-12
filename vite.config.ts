@@ -3,7 +3,7 @@
 import * as path from 'path';
 import {defineConfig, PluginOption} from 'vite';
 import react from '@vitejs/plugin-react';
-import linaria from '@linaria/rollup';
+import linaria from '@linaria/vite';
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
 const base = buildDemo ? '/native-router-react/demos/' : '/demos/';
@@ -55,14 +55,10 @@ export default defineConfig({
     open: '/demos/'
   },
   plugins: [
-    {
-      apply: buildDemo ? 'build' : 'serve',
-      enforce: 'pre',
-      ...linaria({
-        sourceMap: true,
-        exclude: ['node_modules/**']
-      })
-    } as PluginOption,
+    linaria({
+      sourceMap: true,
+      exclude: ['node_modules/**']
+    }),
     react({
       exclude: ['node_modules/**'],
       babel: {
