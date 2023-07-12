@@ -22,7 +22,7 @@
     "start": "vite",
     "build": "vite build && tsc -p tsconfig.production.json && tsc-alias -p tsconfig.production.json",
     "commit": "lint-staged && git-cz -n",
-    "coverage": "nyc report --reporter=text-lcov | coveralls",
+    "coverage": "nyc report --reporter=text-lcov > ./.nyc_output/coverage.txt",
     "lint": "eslint --fix src test demos *.js --ext .js,.jsx,.ts,.tsx",
     "doc:gen": "typedoc",
     "build:demo": "cross-env BABEL_ENV=development BUILD_DEMO=true vite build",

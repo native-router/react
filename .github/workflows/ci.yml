@@ -30,10 +30,10 @@ jobs:
       - name: Lint Sources with ESLint
         run: npm run lint
       - name: Run Test
-        run: npm test
+        run: npm test && npm run coverage
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          directory: ./.nyc_output
+          files: ./.nyc_output/coverage.txt
