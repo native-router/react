@@ -1,6 +1,6 @@
 {
   "name": "native-router-react",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "main": "dist/native-router-react.mjs",
   "exports": {
     ".": "./dist/native-router-react.mjs"
