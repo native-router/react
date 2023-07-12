@@ -36,4 +36,4 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          files: ./nyc_output/processinfo/index.json
+          files: ./.nyc_output/processinfo/index.json
