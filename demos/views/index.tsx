@@ -43,6 +43,7 @@ export default function App() {
     return (
       <HashRouter
         routes={routes}
+        // eslint-disable-next-line react/no-unstable-nested-components
         errorHandler={(e) => <RouterError error={e} />}
       >
         <View />
@@ -56,6 +57,7 @@ export default function App() {
       <MemoryRouter
         initialEntries={['/']}
         routes={routes}
+        // eslint-disable-next-line react/no-unstable-nested-components
         errorHandler={(e) => <RouterError error={e} />}
       >
         <View />
@@ -69,6 +71,7 @@ export default function App() {
       routes={routes}
       // baseUrl={import.meta.env.BASE_URL.slice(0, -1)}
       baseUrl={process.env.BASE_URL?.slice(0, -1)}
+      // eslint-disable-next-line react/no-unstable-nested-components
       errorHandler={(e) => <RouterError error={e} />}
     >
       <View />

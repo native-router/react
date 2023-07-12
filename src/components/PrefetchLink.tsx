@@ -6,6 +6,7 @@ import {
   ReactNode,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState
 } from 'react';
@@ -69,8 +70,13 @@ export default function PrefetchLink({to, children, ...rest}: LinkProps) {
     viewPromiseRef.current = undefined;
   }, [to, router]);
 
+  const linkContext = useMemo(
+    () => ({loading, error, view}),
+    [loading, error, view]
+  );
+
   return (
-    <Context.Provider value={{loading, error, view}}>
+    <Context.Provider value={linkContext}>
       <a
         {...rest}
         href={createHref(router, to)}

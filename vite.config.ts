@@ -1,7 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import * as path from 'path';
-import {defineConfig, PluginOption} from 'vite';
+import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
 import linaria from '@linaria/vite';
 

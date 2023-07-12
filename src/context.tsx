@@ -1,4 +1,4 @@
-import {createContext, ReactNode, useContext} from 'react';
+import {createContext, ReactNode, useContext, useMemo} from 'react';
 import {
   createStateContext,
   useSetterContext,
@@ -26,8 +26,7 @@ export function useView() {
  * @group Components
  */
 export function View() {
-  const view = useView();
-  return <>{view}</>;
+  return useView();
 }
 
 const DataContext = createContext<[any, Record<string, any>]>([undefined, {}]);
@@ -53,13 +52,11 @@ export function DataProvider({
   name?: string;
 }) {
   const namedData = useNamedData();
-  return (
-    <DataContext.Provider
-      value={[data, name ? {...namedData, [name]: data} : namedData]}
-    >
-      {children}
-    </DataContext.Provider>
+  const value = useMemo(
+    () => [data, name ? {...namedData, [name]: data} : namedData] as [any, any],
+    [data, name, namedData]
   );
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 export const MatchedContext = createContext<Context<Route> | undefined>(

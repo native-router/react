@@ -45,7 +45,7 @@ function BRouter({children}: {children: ReactNode}) {
   useEffect(() => listen(router, setView), [router]);
 
   return children === 'undefined' ? (
-    <>{view}</>
+    view
   ) : (
     <ViewProvider value={view}>{children}</ViewProvider>
   );
