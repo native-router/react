@@ -13,6 +13,7 @@
     "prefetch",
     "preview"
   ],
+  "description": "A route close to the native experience for react.",
   "types": "dist/index.d.ts",
   "files": [
     "dist"
