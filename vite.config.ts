@@ -40,6 +40,7 @@ export default defineConfig({
         sourcemap: true,
         lib: {
           name: 'native-router-react',
+          formats: ['es'],
           entry: 'src/index.tsx'
         },
         rollupOptions: {
