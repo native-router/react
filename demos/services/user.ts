@@ -6,17 +6,22 @@ const users = [
   {id: 2, username: 'user 2', description: '...'}
 ];
 
+const log =
+  typeof process !== 'undefined' && process.env.NODE_ENV === 'test'
+    ? () => {}
+    : console.log;
+
 export async function fetchList() {
-  console.log('fetch list start');
+  log('fetch list start');
   await sleep(3000);
-  console.log('fetch list done');
+  log('fetch list done');
   return users;
 }
 
 export async function fetchById(id: number) {
-  console.log('fetch by id start');
+  log('fetch by id start');
   await sleep(3000);
-  console.log('fetch by id done');
+  log('fetch by id done');
   if (id > 2) throw new Error('Not Found');
   return users.find((user) => user.id === id);
 }

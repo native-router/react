@@ -1,3 +1,4 @@
+import sinon from 'sinon';
 import {
   render,
   fireEvent,
@@ -7,6 +8,7 @@ import {
   configure
 } from '@testing-library/react';
 import App from '@/views';
+import {useFakeTimers} from './util';
 
 declare const $jsdom: any;
 
@@ -17,46 +19,68 @@ describe('Router', () => {
     configure({
       asyncUtilTimeout: 999999
     });
-
-    const s = global.setTimeout;
-    // @ts-ignore
-    global.setTimeout = (fn, delay) => s(fn, Math.max(delay / 1000, 50));
   });
 
-  beforeEach(() => {
+  beforeEach(function () {
+    this.clock = useFakeTimers();
     $jsdom.reconfigure({url: 'http://localhost:3000/demos/'});
     render(<App />);
   });
 
-  it('should render home page successfully', async () => {
+  afterEach(async function () {
+    const {history} = window;
+    if (history.state.idx) history.go(-history.state.idx);
+    await this.clock.runAllAsync();
+    this.clock.restore();
+  });
+
+  it('should render home page successfully', async function () {
+    this.clock.next();
     const loading = screen.getByTestId('loading');
+    this.clock.runAllAsync();
     await waitForElementToBeRemoved(loading);
     screen.getByText('Hello World!').should.not.be.empty();
   });
 
-  it('should navigate to user list page successfully', async () => {
+  it('should navigate to user list page successfully', async function () {
+    this.clock.runAllAsync();
     const userListLink = await waitFor(() => screen.getByText('Users'));
     fireEvent.click(userListLink);
-    await screen.findByTestId('loading');
-    // screen.getByText('Hello World!').should.not.be.empty();
-    // window.location.href.should.be.equal('http://localhost:3000/demos/');
-
-    await waitForElementToBeRemoved(screen.getByTestId('loading'));
+    this.clock.tick(1000);
+    const loading = await screen.findByTestId('loading');
+    screen.getByText('Hello World!').should.not.be.empty();
+    window.location.href.should.be.equal('http://localhost:3000/demos/');
+    this.clock.tickAsync(10000);
+    await waitForElementToBeRemoved(loading);
     window.location.href.should.be.equal('http://localhost:3000/demos/users');
     screen.getByText('User List').should.not.be.empty();
   });
 
-  it('should navigate to error page successfully', async () => {
+  it('should navigate to error page successfully', async function () {
+    this.clock.runAllAsync();
     const userListLink = await waitFor(() => screen.getByText('Users'));
     fireEvent.click(userListLink);
-
+    await this.clock.runAllAsync();
     const lostLink = await waitFor(() => screen.getByTestId('lost'));
     fireEvent.click(lostLink);
+    this.clock.tickAsync(1000);
     const refreshButton = await waitFor(() => screen.getByText('Refresh'));
 
     window.location.href.should.be.equal('http://localhost:3000/demos/users/3');
     screen.getByText('Error').should.not.be.empty();
     fireEvent.click(refreshButton);
+    this.clock.nextAsync();
     await waitFor(() => screen.getByTestId('loading'));
+  });
+
+  it('should cancel navigate successfully', async function () {
+    this.clock.runAllAsync();
+    const userListLink = await waitFor(() => screen.getByText('Users'));
+    fireEvent.click(userListLink);
+    this.clock.tick(1000);
+    const loading = await screen.findByTestId('loading');
+    fireEvent.click(loading);
+    loading.isConnected.should.be.false();
+    window.location.href.should.be.equal('http://localhost:3000/demos/');
   });
 });
