@@ -10,7 +10,7 @@ import RouterError from '@/components/RouterError';
 import * as userService from '@/services/user';
 
 export default function App() {
-  const mode = window.location.search.slice(1);
+  const mode = window.location.search.slice(1).split('#', 1)[0];
   const routes = {
     component: () => import('./Layout'),
     children: [

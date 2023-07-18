@@ -145,7 +145,8 @@ export function resolve<R extends BaseRoute = BaseRoute, V = any>(
   return (
     matched
       ? resolveView(matched, {router, location})
-      : Promise.reject(new Error('Not Found'))
+      : // TODO: Custom Error
+        Promise.reject(new Error('Not Found'))
   ).catch(errorHandler);
 }
 
