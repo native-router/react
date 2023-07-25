@@ -19,7 +19,9 @@ export type BaseRoute<T = any> = {
   children?: BaseRoute<T>[];
 } & Omit<T, 'path' | 'children'>;
 
-export type Matched<R extends BaseRoute = BaseRoute> = {route: R} & MatchResult;
+export type Matched<R extends BaseRoute = BaseRoute> = {route: R} & MatchResult<
+  Record<string, string>
+>;
 
 export type ResolveViewContext<R extends BaseRoute> = {
   // eslint-disable-next-line no-use-before-define
@@ -57,13 +59,13 @@ export type Context<T extends BaseRoute> = {
   index: number;
   router: RouterInstance<BaseRoute>;
   location: Location;
+  params: Record<string, string>;
 };
 
 export type Route = BaseRoute<{
   name?: string;
-  data?(params: any, ctx: Context<Route>): any | Promise<any>;
+  data?(ctx: Context<Route>): any | Promise<any>;
   component?(
-    params: any,
     ctx: Context<Route>
   ): ComponentType | Promise<ComponentType | {default: ComponentType}>;
 }>;

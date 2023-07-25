@@ -17,17 +17,18 @@ export default function resolveView(
     matched.map(({params, route}, index) => {
       const ctx = {
         matched: matched!,
+        params,
         index,
         router,
         location
       };
       function resolveComponent(): ComponentType | Promise<ComponentType> {
         if (!route.component) return View;
-        const r = route.component(params, ctx);
+        const r = route.component(ctx);
         return Promise.resolve(r).then((m) => ('default' in m ? m.default : m));
       }
 
-      return Promise.all([route.data?.(params, ctx), resolveComponent()]).then(
+      return Promise.all([route.data?.(ctx), resolveComponent()]).then(
         ([data, C]) => (
           <DataProvider data={data} name={route.name}>
             <MatchedContext.Provider value={ctx}>

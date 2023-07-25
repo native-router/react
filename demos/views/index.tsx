@@ -26,7 +26,7 @@ export default function App() {
       {
         path: '/users/:id',
         component: () => import('./UserProfile'),
-        data: ({id}) => userService.fetchById(+id)
+        data: ({params}) => userService.fetchById(+params.id)
       },
       {
         path: '/help',
