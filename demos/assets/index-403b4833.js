@@ -1,0 +1,1 @@
+import{j as e}from"./index-e84a7ac5.js";const t="ccompzo";function s({className:o}){return e.jsx("div",{className:o,children:"Hello World!"})}function c(){return e.jsxs("div",{className:"c19ojwk0",children:[e.jsx("h1",{children:"Welcome to Native Router"}),e.jsx(s,{className:t})]})}export{c as default};
