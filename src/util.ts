@@ -5,8 +5,8 @@ export function uniqId() {
 
 export function noop() {}
 
-export const resolve = Promise.resolve.bind(Promise);
-export const reject = Promise.reject.bind(Promise);
+export const resolve = /* @__PURE__ */ Promise.resolve.bind(Promise);
+export const reject = /* @__PURE__ */ Promise.reject.bind(Promise);
 
 export function cancelPromise() {
   return new Promise(noop);

@@ -16,6 +16,7 @@ English | [简体中文](./README-zh_CN.md)
 - Page data concurrent fetch
 - Link prefetch and preview
 - Most unused features can be tree-shaking
+- SSR support
 
 ## Install
 
