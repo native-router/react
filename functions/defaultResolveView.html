@@ -17,7 +17,7 @@
 <h1>Function defaultResolveView</h1></div>
 <section class="tsd-panel">
 <ul class="tsd-signatures">
-<li class="tsd-signature tsd-anchor-link" id="defaultResolveView"><span class="tsd-kind-call-signature">default<wbr/>Resolve<wbr/>View</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">matched</span>, <span class="tsd-kind-parameter">viewContext</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">Element</span><span class="tsd-signature-symbol">&gt;</span><a href="#defaultResolveView" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><g stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" id="icon-anchor"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M10 14a3.5 3.5 0 0 0 5 0l4 -4a3.5 3.5 0 0 0 -5 -5l-.5 .5"></path><path d="M14 10a3.5 3.5 0 0 0 -5 0l-4 4a3.5 3.5 0 0 0 5 5l.5 -.5"></path></g></svg></a></li>
+<li class="tsd-signature tsd-anchor-link" id="defaultResolveView"><span class="tsd-kind-call-signature">default<wbr/>Resolve<wbr/>View</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">matched</span>, <span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">Element</span><span class="tsd-signature-symbol">&gt;</span><a href="#defaultResolveView" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><g stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" id="icon-anchor"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M10 14a3.5 3.5 0 0 0 5 0l4 -4a3.5 3.5 0 0 0 -5 -5l-.5 .5"></path><path d="M14 10a3.5 3.5 0 0 0 -5 0l-4 4a3.5 3.5 0 0 0 5 5l.5 -.5"></path></g></svg></a></li>
 <li class="tsd-description">
 <div class="tsd-comment tsd-typography"><p>The default implementation of resolve view</p>
 </div>
@@ -30,17 +30,14 @@
 </div>
 <div class="tsd-comment tsd-typography"></div></li>
 <li>
-<h5><span class="tsd-kind-parameter">viewContext</span>: <a href="../types/ResolveViewContext.html" class="tsd-signature-type tsd-kind-type-alias">ResolveViewContext</a><span class="tsd-signature-symbol">&lt;</span><a href="../types/Route.html" class="tsd-signature-type tsd-kind-type-alias">Route</a><span class="tsd-signature-symbol">&gt;</span></h5>
-<div class="tsd-comment tsd-typography"><p>resolved view context</p>
-</div>
-<div class="tsd-comment tsd-typography"></div></li></ul></div>
+<h5><span class="tsd-kind-parameter">ctx</span>: <a href="../types/ResolveViewContext.html" class="tsd-signature-type tsd-kind-type-alias">ResolveViewContext</a><span class="tsd-signature-symbol">&lt;</span><a href="../types/Route.html" class="tsd-signature-type tsd-kind-type-alias">Route</a><span class="tsd-signature-symbol">&gt;</span></h5></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">Element</span><span class="tsd-signature-symbol">&gt;</span></h4><p>the resolve view</p>
 
 <div class="tsd-comment tsd-typography">
 <h4>See</h4><p><a href="create.html" class="tsd-kind-function">router-&gt;create</a></p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/07aaccb/src/resolve-view.tsx#L12">resolve-view.tsx:12</a></li></ul></aside></li></ul></section></div>
+<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/118e7f1/src/resolve-view.tsx#L12">resolve-view.tsx:12</a></li></ul></aside></li></ul></section></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -63,11 +60,13 @@
 <li><a href="PrefetchLink.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>Prefetch<wbr/>Link</span></a></li>
 <li><a href="usePrefetch.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Prefetch</span></a></li>
 <li><a href="useView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>View</span></a></li>
+<li><a href="InitializableView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>Initializable<wbr/>View</span></a></li>
 <li><a href="View.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>View</span></a></li>
 <li><a href="useData.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Data</span></a></li>
 <li><a href="useLoading.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Loading</span></a></li>
 <li><a href="useMatched.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Matched</span></a></li>
 <li><a href="defaultResolveView.html" class="current"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>default<wbr/>Resolve<wbr/>View</span></a></li>
+<li><a href="resolveClientView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>resolve<wbr/>Client<wbr/>View</span></a></li>
 <li><a href="createRouter.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>create<wbr/>Router</span></a></li>
 <li><a href="Router.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>Router</span></a></li>
 <li><a href="HistoryRouter.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>History<wbr/>Router</span></a></li>

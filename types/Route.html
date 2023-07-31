@@ -15,7 +15,7 @@
 <li><a href="../modules.html">native-router-react</a></li>
 <li><a href="Route.html">Route</a></li></ul>
 <h1>Type alias Route</h1></div>
-<div class="tsd-signature"><span class="tsd-kind-type-alias">Route</span><span class="tsd-signature-symbol">:</span> <a href="BaseRoute.html" class="tsd-signature-type tsd-kind-type-alias">BaseRoute</a><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">{ </span><br/><span>    </span><span class="tsd-kind-property">name</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">; </span><br/><span>    </span><span class="tsd-kind-call-signature">data</span><span class="tsd-signature-symbol">?</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">params</span>, <span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol"> =&gt; </span><span class="tsd-signature-type">any</span><span class="tsd-signature-symbol">; </span><br/><span>    </span><span class="tsd-kind-call-signature">component</span><span class="tsd-signature-symbol">?</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">params</span>, <span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol"> =&gt; </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-symbol">{ </span><br/><span>        </span><span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol">; </span><br/><span>    </span><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">; </span><br/><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span></div>
+<div class="tsd-signature"><span class="tsd-kind-type-alias">Route</span><span class="tsd-signature-symbol">:</span> <a href="BaseRoute.html" class="tsd-signature-type tsd-kind-type-alias">BaseRoute</a><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-symbol">{ </span><br/><span>    </span><span class="tsd-kind-property">name</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">; </span><br/><span>    </span><span class="tsd-kind-call-signature">data</span><span class="tsd-signature-symbol">?</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol"> =&gt; </span><span class="tsd-signature-type">any</span><span class="tsd-signature-symbol">; </span><br/><span>    </span><span class="tsd-kind-call-signature">component</span><span class="tsd-signature-symbol">?</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol"> =&gt; </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-symbol">{ </span><br/><span>        </span><span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol">; </span><br/><span>    </span><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">; </span><br/><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span></div>
 <div class="tsd-type-declaration">
 <h4>Type declaration</h4>
 <ul class="tsd-parameters">
@@ -24,35 +24,31 @@
 <li class="tsd-parameter">
 <h5><span class="tsd-kind-method">data</span><span class="tsd-signature-symbol">?:</span>function</h5>
 <ul class="tsd-signatures">
-<li class="tsd-signature tsd-anchor-link"><span class="tsd-kind-call-signature">data</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">params</span>, <span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">any</span></li>
+<li class="tsd-signature tsd-anchor-link"><span class="tsd-kind-call-signature">data</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">any</span></li>
 <li class="tsd-description">
 <div class="tsd-parameters">
 <h4 class="tsd-parameters-title">Parameters</h4>
 <ul class="tsd-parameter-list">
-<li>
-<h5><span class="tsd-kind-parameter">params</span>: <span class="tsd-signature-type">any</span></h5></li>
 <li>
 <h5><span class="tsd-kind-parameter">ctx</span>: <a href="Context.html" class="tsd-signature-type tsd-kind-type-alias">Context</a><span class="tsd-signature-symbol">&lt;</span><a href="Route.html" class="tsd-signature-type tsd-kind-type-alias">Route</a><span class="tsd-signature-symbol">&gt;</span></h5></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">any</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/07aaccb/src/types.ts#L64">types.ts:64</a></li></ul></aside></li></ul></li>
+<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/118e7f1/src/types.ts#L67">types.ts:67</a></li></ul></aside></li></ul></li>
 <li class="tsd-parameter">
 <h5><span class="tsd-kind-method">component</span><span class="tsd-signature-symbol">?:</span>function</h5>
 <ul class="tsd-signatures">
-<li class="tsd-signature tsd-anchor-link"><span class="tsd-kind-call-signature">component</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">params</span>, <span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-symbol">{ </span><br/><span>    </span><span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol">; </span><br/><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span></li>
+<li class="tsd-signature tsd-anchor-link"><span class="tsd-kind-call-signature">component</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">ctx</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-symbol">{ </span><br/><span>    </span><span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol">; </span><br/><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span></li>
 <li class="tsd-description">
 <div class="tsd-parameters">
 <h4 class="tsd-parameters-title">Parameters</h4>
 <ul class="tsd-parameter-list">
 <li>
-<h5><span class="tsd-kind-parameter">params</span>: <span class="tsd-signature-type">any</span></h5></li>
-<li>
 <h5><span class="tsd-kind-parameter">ctx</span>: <a href="Context.html" class="tsd-signature-type tsd-kind-type-alias">Context</a><span class="tsd-signature-symbol">&lt;</span><a href="Route.html" class="tsd-signature-type tsd-kind-type-alias">Route</a><span class="tsd-signature-symbol">&gt;</span></h5></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-type ">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol"> | </span><span class="tsd-signature-symbol">{ </span><br/><span>    </span><span class="tsd-kind-property">default</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type ">ComponentType</span><span class="tsd-signature-symbol">; </span><br/><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/07aaccb/src/types.ts#L65">types.ts:65</a></li></ul></aside></li></ul></li></ul></div><aside class="tsd-sources">
+<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/118e7f1/src/types.ts#L68">types.ts:68</a></li></ul></aside></li></ul></li></ul></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/07aaccb/src/types.ts#L62">types.ts:62</a></li></ul></aside></div>
+<li>Defined in <a href="https://github.com/wmzy/native-router-react/blob/118e7f1/src/types.ts#L65">types.ts:65</a></li></ul></aside></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -75,11 +71,13 @@
 <li><a href="../functions/PrefetchLink.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>Prefetch<wbr/>Link</span></a></li>
 <li><a href="../functions/usePrefetch.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Prefetch</span></a></li>
 <li><a href="../functions/useView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>View</span></a></li>
+<li><a href="../functions/InitializableView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>Initializable<wbr/>View</span></a></li>
 <li><a href="../functions/View.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>View</span></a></li>
 <li><a href="../functions/useData.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Data</span></a></li>
 <li><a href="../functions/useLoading.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Loading</span></a></li>
 <li><a href="../functions/useMatched.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>use<wbr/>Matched</span></a></li>
 <li><a href="../functions/defaultResolveView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>default<wbr/>Resolve<wbr/>View</span></a></li>
+<li><a href="../functions/resolveClientView.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>resolve<wbr/>Client<wbr/>View</span></a></li>
 <li><a href="../functions/createRouter.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>create<wbr/>Router</span></a></li>
 <li><a href="../functions/Router.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>Router</span></a></li>
 <li><a href="../functions/HistoryRouter.html"><svg class="tsd-kind-icon" viewBox="0 0 24 24"><use href="#icon-64"></use></svg><span>History<wbr/>Router</span></a></li>
