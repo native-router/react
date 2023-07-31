@@ -12,3 +12,5 @@ export {
 export * from './router';
 export {default as defaultResolveView} from './resolve-view';
 export * from './types';
+
+export {resolveClientView} from './ssr';

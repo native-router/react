@@ -7,10 +7,11 @@ import linaria from '@linaria/vite';
 import type {Plugin} from 'vite';
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
+const isSSR = process.env.SSR === 'true';
 const base = buildDemo ? '/native-router-react/demos/' : '/demos/';
 
 export default defineConfig({
-  // base,
+  base: isSSR ? '/' : base,
   resolve: {
     alias: [
       {
@@ -46,7 +47,10 @@ export default defineConfig({
         lib: {
           name: 'native-router-react',
           formats: ['es'],
-          entry: 'src/index.tsx'
+          entry: {
+            index: 'src/index.tsx',
+            server: 'src/server.tsx'
+          }
         },
         rollupOptions: {
           external: (id) =>
@@ -72,7 +76,7 @@ export default defineConfig({
         babelrc: true
       }
     }),
-    ssr()
+    isSSR && ssr()
   ]
 });
 

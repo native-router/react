@@ -1,9 +1,15 @@
 {
   "name": "native-router-react",
   "version": "0.8.5",
-  "main": "dist/native-router-react.mjs",
   "exports": {
-    ".": "./dist/native-router-react.mjs"
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server.mjs",
+      "types": "./dist/types/server.d.ts"
+    }
   },
   "keywords": [
     "react",
@@ -17,12 +23,12 @@
     "preview"
   ],
   "description": "A route close to the native experience for react.",
-  "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
     "start": "vite",
+    "start:ssr": "cross-env SSR=true vite",
     "build": "vite build && tsc -p tsconfig.production.json && tsc-alias -p tsconfig.production.json",
     "commit": "lint-staged && git-cz -n",
     "coverage": "nyc report --reporter=text-lcov > ./.nyc_output/coverage.txt",

@@ -67,7 +67,7 @@ export function match<R extends BaseRoute = BaseRoute>(
       const route = routes[i];
       const end = !route.children;
       const matched = route.path
-        ? createMatcher(route.path, {
+        ? createMatcher<Record<string, string>>(route.path, {
             strict: true,
             sensitive: true,
             decode:
