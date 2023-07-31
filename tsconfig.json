@@ -48,6 +48,7 @@
     "baseUrl": ".",                       /* Base directory to resolve non-absolute module names. */
     "paths": {
       "@/*": ["./demos/*"],
+      "native-router-react/server": ["./src/server.tsx"],
       "native-router-react": ["./src/index.tsx"],
       "@@/*": ["./src/*"]
     },                                        /* A series of entries which re-map imports to lookup locations relative to the 'baseUrl'. */

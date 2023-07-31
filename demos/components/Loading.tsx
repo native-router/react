@@ -3,10 +3,14 @@ import {CSSProperties, ReactPortal, useMemo, useEffect, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {cancel, useLoading, useRouter} from 'native-router-react';
 
-export default function Loading(): ReactPortal | null {
+function Loading(): ReactPortal | null {
   const router = useRouter();
   const [percent, setPercent] = useState<number>(0);
-  const el = useMemo(() => document.createElement('div'), []);
+  const el = useMemo(() => {
+    const div = document.createElement('div');
+    div.setAttribute('suppressHydrationWarning', 'true');
+    return div;
+  }, []);
 
   const loading = useLoading();
   const {key, status} = loading || {};
@@ -87,4 +91,13 @@ export default function Loading(): ReactPortal | null {
     </button>,
     el
   );
+}
+
+export default function ClientLoading() {
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+  if (!isClient) return null;
+  return <Loading />;
 }

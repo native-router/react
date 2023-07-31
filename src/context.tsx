@@ -1,4 +1,4 @@
-import {createContext, ReactNode, useContext, useMemo} from 'react';
+import {createContext, ReactNode, useContext, useMemo, useRef} from 'react';
 import {
   createStateContext,
   useSetterContext,
@@ -27,6 +27,14 @@ export function useView() {
  */
 export function View() {
   return useView();
+}
+
+export function InitializableView({initial}: {initial: ReactNode}) {
+  const view = useView();
+  const ref = useRef<ReactNode | Symbol>(view);
+  if (view === ref.current && !view) return initial;
+  ref.current = Symbol('');
+  return view;
 }
 
 const DataContext = createContext<[any, Record<string, any>]>([undefined, {}]);

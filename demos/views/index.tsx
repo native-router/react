@@ -1,5 +1,5 @@
 import {
-  View,
+  InitializableView as View,
   MemoryRouter,
   HashRouter,
   HistoryRouter,
@@ -8,36 +8,38 @@ import {
 import Loading from '@/components/Loading';
 import RouterError from '@/components/RouterError';
 import * as userService from '@/services/user';
+import type {ReactNode} from 'react';
 
-export default function App() {
+export const routes = {
+  component: () => import('./Layout'),
+  children: [
+    {
+      path: '/',
+      component: () => import('./Home')
+    },
+    {
+      path: '/users',
+      component: () => import('./UserList'),
+      data: userService.fetchList
+    },
+    {
+      path: '/users/:id',
+      component: () => import('./UserProfile'),
+      data: ({params}) => userService.fetchById(+params.id)
+    },
+    {
+      path: '/help',
+      component: () => import('./Help')
+    },
+    {
+      path: '/about',
+      component: () => import('./About')
+    }
+  ]
+} as Route;
+
+export default function App({initial}: {initial?: ReactNode}) {
   const mode = window.location.search.slice(1).split('#', 1)[0];
-  const routes = {
-    component: () => import('./Layout'),
-    children: [
-      {
-        path: '/',
-        component: () => import('./Home')
-      },
-      {
-        path: '/users',
-        component: () => import('./UserList'),
-        data: userService.fetchList
-      },
-      {
-        path: '/users/:id',
-        component: () => import('./UserProfile'),
-        data: ({params}) => userService.fetchById(+params.id)
-      },
-      {
-        path: '/help',
-        component: () => import('./Help')
-      },
-      {
-        path: '/about',
-        component: () => import('./About')
-      }
-    ]
-  } as Route;
 
   if (mode === 'hash') {
     return (
@@ -46,7 +48,7 @@ export default function App() {
         // eslint-disable-next-line react/no-unstable-nested-components
         errorHandler={(e) => <RouterError error={e} />}
       >
-        <View />
+        <View initial={initial} />
         <Loading />
       </HashRouter>
     );
@@ -60,7 +62,7 @@ export default function App() {
         // eslint-disable-next-line react/no-unstable-nested-components
         errorHandler={(e) => <RouterError error={e} />}
       >
-        <View />
+        <View initial={initial} />
         <Loading />
       </MemoryRouter>
     );
@@ -74,7 +76,7 @@ export default function App() {
       // eslint-disable-next-line react/no-unstable-nested-components
       errorHandler={(e) => <RouterError error={e} />}
     >
-      <View />
+      <View initial={initial} />
       <Loading />
     </HistoryRouter>
   );

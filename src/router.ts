@@ -9,7 +9,7 @@ import type {
   ResolveView,
   HistoryState
 } from './types';
-import {createCurrentGuard, noop} from './util';
+import {createCurrentGuard, noop, reject} from './util';
 
 /**
  * Create a router instance.
@@ -39,7 +39,7 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
     currentGuard,
     cancelAll,
 
-    errorHandler: Promise.reject,
+    errorHandler: reject,
     ...options,
     baseUrl: options?.baseUrl || ''
   };
