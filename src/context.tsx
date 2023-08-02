@@ -29,14 +29,6 @@ export function View() {
   return useView();
 }
 
-export function InitializableView({initial}: {initial: ReactNode}) {
-  const view = useView();
-  const ref = useRef<ReactNode | Symbol>(view);
-  if (view === ref.current && !view) return initial;
-  ref.current = Symbol('');
-  return view;
-}
-
 const DataContext = createContext<[any, Record<string, any>]>([undefined, {}]);
 
 function useDataContext() {

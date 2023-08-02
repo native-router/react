@@ -15,7 +15,7 @@ import {
 } from 'history';
 import type {Options, ResolveView, Route, RouterInstance} from '@@/types';
 import {LoadingContext, useLoadingSetter, ViewProvider} from '@@/context';
-import {create, listen} from '@@/router';
+import {create, getCurrentView, listen} from '@@/router';
 import defaultResolve from '@@/resolve-view';
 import {uniqId} from '@@/util';
 
@@ -26,10 +26,8 @@ const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
 type Props = {
   children: ReactNode;
   routes: Route[] | Route;
-  baseUrl?: string;
   resolveView?: typeof defaultResolve;
-  errorHandler?: (error: Error) => ReactNode;
-};
+} & Options<ReactNode>;
 
 function BRouter({children}: {children: ReactNode}) {
   const setLoading = useLoadingSetter();
@@ -40,7 +38,7 @@ function BRouter({children}: {children: ReactNode}) {
     setLoading(status && {key: uniqId(), status});
   };
 
-  const [view, setView] = useState<ReactNode>();
+  const [view, setView] = useState<ReactNode>(getCurrentView(router));
 
   useEffect(() => listen(router, setView), [router]);
 
@@ -49,17 +47,6 @@ function BRouter({children}: {children: ReactNode}) {
   ) : (
     <ViewProvider value={view}>{children}</ViewProvider>
   );
-}
-
-export function createRouter(
-  routes: Route | Route[],
-  history: History,
-  {
-    resolveView = defaultResolve,
-    ...options
-  }: Options<ReactNode> & {resolveView?: ResolveView<Route, ReactNode>} = {}
-): RouterInstance<Route, ReactNode> {
-  return create(routes, history, resolveView, options);
 }
 
 /**
@@ -80,6 +67,17 @@ export function Router({
       </RouterContext.Provider>
     </LoadingContext.Provider>
   );
+}
+
+export function createRouter(
+  routes: Route | Route[],
+  history: History,
+  {
+    resolveView = defaultResolve,
+    ...options
+  }: Options<ReactNode> & {resolveView?: ResolveView<Route, ReactNode>} = {}
+): RouterInstance<Route, ReactNode> {
+  return create(routes, history, resolveView, options);
 }
 
 function useNewRouter(

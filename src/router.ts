@@ -28,14 +28,20 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
   options?: Options<V>
 ): RouterInstance<R, V> {
   const [currentGuard, cancelAll] = createCurrentGuard();
+  const {index, locationStack} = getHistoryState({history});
+  const viewStack = [];
+
+  if (options?.currentView) {
+    viewStack[index] = options.currentView;
+  }
 
   return {
     routes: Array.isArray(routes) ? routes : [routes],
     resolveView,
 
     history: history as History,
-    locationStack: [],
-    viewStack: [],
+    locationStack,
+    viewStack,
     currentGuard,
     cancelAll,
 
@@ -43,6 +49,23 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
     ...options,
     baseUrl: options?.baseUrl || ''
   };
+}
+
+export function getHistoryState({
+  history
+}: Pick<RouterInstance<any>, 'history'>) {
+  return (
+    (history.location.state as HistoryState) || {
+      index: 0,
+      locationStack: [history.location]
+    }
+  );
+}
+
+export function getCurrentView<R extends BaseRoute = BaseRoute>(
+  router: RouterInstance<R>
+) {
+  return router.viewStack[getHistoryState(router).index];
 }
 
 /**
@@ -182,7 +205,7 @@ export function commit<R extends BaseRoute = BaseRoute, V = any>(
   location: Location
 ): Promise<void> {
   const {history, currentGuard, onLoadingChange = noop} = router;
-  const nextIndex = ((history.location.state as HistoryState)?.index || 0) + 1;
+  const nextIndex = getHistoryState(router).index + 1;
   if (router.resolving) {
     onLoadingChange();
   }
@@ -224,7 +247,7 @@ export function commitReplace<R extends BaseRoute = BaseRoute, V = any>(
   location: Location
 ): Promise<void> {
   const {history, currentGuard, onLoadingChange = noop} = router;
-  const index = (history.location.state as HistoryState)?.index || 0;
+  const {index} = getHistoryState(router);
   if (router.resolving) {
     onLoadingChange();
   }
@@ -345,6 +368,20 @@ export function cancel<R extends BaseRoute = BaseRoute, V = any>({
   onLoadingChange();
 }
 
+export function initHistoryStack<R extends BaseRoute = BaseRoute, V = any>(
+  router: RouterInstance<R, V>
+) {
+  const {history} = router;
+  const {locationStack} = getHistoryState(router);
+
+  return Promise.all(locationStack.map((l) => resolve(router, l))).then(
+    (views) => {
+      router.viewStack = views;
+      history.replace(createPath(history.location), history.location.state);
+    }
+  );
+}
+
 /**
  * Listen the history change.
  * @group Methods
@@ -357,29 +394,17 @@ export function listen<R extends BaseRoute = BaseRoute, V = any>(
   router: RouterInstance<R, V>,
   onViewChange: (v: V) => void
 ) {
-  const {onLoadingChange = noop, history} = router;
-  const locationStack = (history.location.state as HistoryState)
-    ?.locationStack || [history.location];
-  router.locationStack = locationStack;
-
-  onLoadingChange('pending');
-  Promise.all(locationStack.map((l) => resolve(router, l)))
-    .then((views) => {
-      router.viewStack = views;
-      history.replace(createPath(history.location), history.location.state);
-      onLoadingChange('resolved');
-    })
-    .catch((e) => {
-      onLoadingChange('rejected');
-      throw e;
-    });
+  const {history} = router;
 
   const rmListener = history.listen(({action, location}) => {
     cancel(router);
 
     const state = location.state as HistoryState;
     const index = state?.index || 0;
-    onViewChange(router.viewStack[index]);
+    const view = router.viewStack[index];
+
+    onViewChange(view);
+    if (!view) refresh(router);
 
     if (action === 'POP') {
       history.replace(createPath(history.location), {
@@ -388,6 +413,9 @@ export function listen<R extends BaseRoute = BaseRoute, V = any>(
       });
     }
   });
+
+  history.replace(createPath(history.location), history.location.state);
+
   return () => {
     cancel(router);
     rmListener();

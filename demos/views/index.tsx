@@ -1,5 +1,5 @@
 import {
-  InitializableView as View,
+  View,
   MemoryRouter,
   HashRouter,
   HistoryRouter,
@@ -75,6 +75,7 @@ export default function App({initial}: {initial?: ReactNode}) {
       baseUrl={process.env.BASE_URL?.slice(0, -1)}
       // eslint-disable-next-line react/no-unstable-nested-components
       errorHandler={(e) => <RouterError error={e} />}
+      currentView={initial}
     >
       <View initial={initial} />
       <Loading />

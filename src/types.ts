@@ -10,7 +10,7 @@ import type {
 
 export type Location<T = any> = HPath & {state: T};
 
-export type HistoryState = {locationStack: Location[]; index?: number} | null;
+export type HistoryState = {locationStack: Location[]; index: number} | null;
 
 export type Awaitable<T> = T | Promise<T>;
 
@@ -35,6 +35,7 @@ export type ResolveView<R extends BaseRoute, V> = (
 
 export type Options<V> = {
   baseUrl?: string;
+  currentView?: V;
   errorHandler?(e: Error): V | Promise<V>;
   onLoadingChange?(status?: 'pending' | 'resolved' | 'rejected'): void;
 };
