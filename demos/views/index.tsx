@@ -48,7 +48,7 @@ export default function App({initial}: {initial?: ReactNode}) {
         // eslint-disable-next-line react/no-unstable-nested-components
         errorHandler={(e) => <RouterError error={e} />}
       >
-        <View initial={initial} />
+        <View />
         <Loading />
       </HashRouter>
     );
@@ -62,7 +62,7 @@ export default function App({initial}: {initial?: ReactNode}) {
         // eslint-disable-next-line react/no-unstable-nested-components
         errorHandler={(e) => <RouterError error={e} />}
       >
-        <View initial={initial} />
+        <View />
         <Loading />
       </MemoryRouter>
     );
@@ -77,7 +77,7 @@ export default function App({initial}: {initial?: ReactNode}) {
       errorHandler={(e) => <RouterError error={e} />}
       currentView={initial}
     >
-      <View initial={initial} />
+      <View />
       <Loading />
     </HistoryRouter>
   );
