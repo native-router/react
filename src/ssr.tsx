@@ -20,10 +20,9 @@ export function resolveServerView(
     hydrateKey?: string;
   }
 ) {
-  // TODO: remove history
   const router = create(
     routes,
-    createMemoryHistory(),
+    createMemoryHistory({initialEntries: [location]}),
     resolveViewServer,
     options
   );
@@ -52,13 +51,12 @@ export function resolveClientView(
     hydrateKey?: string;
   }
 ) {
-  const {data, location} = (window as Record<string, any>)[
+  const {data, location} = (window as any)[
     options?.hydrateKey || defaultHydrateKey
-  ];
-  // TODO: remove history
+  ] as {data: any[]; location: Location};
   const router = create(
     routes,
-    createMemoryHistory(),
+    createMemoryHistory({initialEntries: [location]}),
     createHydrateResolveView(data),
     options
   );
