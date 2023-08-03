@@ -1,6 +1,6 @@
 import {createHref, navigate} from '@@/router';
 import type {LinkProps} from '@@/types';
-import type {MouseEvent} from 'react';
+import {useRef, type MouseEvent} from 'react';
 import {useRouter} from './Router';
 
 /**
@@ -10,11 +10,14 @@ import {useRouter} from './Router';
  */
 export default function Link({to, ...rest}: LinkProps) {
   const router = useRouter();
+  const lock = useRef(false);
 
-  // TODO: 防重复点击
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
-    navigate(router, to);
+
+    if (lock.current) return;
+    lock.current = true;
+    navigate(router, to).finally(() => (lock.current = false));
   }
   return (
     // eslint-disable-next-line jsx-a11y/anchor-has-content
