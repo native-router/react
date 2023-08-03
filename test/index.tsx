@@ -130,7 +130,9 @@ describe('HashRouter', () => {
     window.location.href.should.be.equal('http://localhost:3000/demos/?hash#/');
     this.clock.tickAsync(10000);
     await waitForElementToBeRemoved(loading);
-    window.location.href.should.be.equal('http://localhost:3000/demos/?hash#/users');
+    window.location.href.should.be.equal(
+      'http://localhost:3000/demos/?hash#/users'
+    );
     screen.getByText('User List').should.not.be.empty();
   });
 });

@@ -34,6 +34,7 @@ export function resolveServerView(
         <script
           {...options?.scriptAttributes}
           suppressHydrationWarning
+          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{
             __html: `window.${
               options?.hydrateKey || defaultHydrateKey
