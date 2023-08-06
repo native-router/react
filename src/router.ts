@@ -54,12 +54,13 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
 export function getHistoryState({
   history
 }: Pick<RouterInstance<any>, 'history'>) {
-  return (
-    (history.location.state as HistoryState) || {
-      index: 0,
-      locationStack: [history.location]
-    }
-  );
+  const state = (history.location.state || {}) as Partial<
+    Exclude<HistoryState, null>
+  >;
+  return {
+    index: state.index || 0,
+    locationStack: state.locationStack || [history.location]
+  };
 }
 
 export function getCurrentView<R extends BaseRoute = BaseRoute>(
