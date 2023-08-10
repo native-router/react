@@ -51,6 +51,13 @@ export function create<R extends BaseRoute = BaseRoute, V = any>(
   };
 }
 
+export function setOptions<R extends BaseRoute = BaseRoute, V = any>(
+  router: RouterInstance<R, V>,
+  options: Omit<Options<V>, 'currentView'>
+) {
+  return Object.assign(router, options);
+}
+
 export function getHistoryState({
   history
 }: Pick<RouterInstance<any>, 'history'>) {

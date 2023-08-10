@@ -15,9 +15,9 @@ import {
 } from 'history';
 import type {Options, ResolveView, Route, RouterInstance} from '@@/types';
 import {LoadingContext, useLoadingSetter, ViewProvider} from '@@/context';
-import {create, getCurrentView, listen} from '@@/router';
+import {create, getCurrentView, listen, setOptions} from '@@/router';
 import defaultResolve from '@@/resolve-view';
-import {uniqId} from '@@/util';
+import {splitProps, uniqId} from '@@/util';
 
 const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
   null
@@ -85,10 +85,12 @@ function useNewRouter(
   createHistory: () => History,
   options: Options<ReactNode>
 ) {
-  return useMemo(
-    () => createRouter(routes, createHistory(), options),
-    [routes, createHistory, ...Object.keys(options), ...Object.values(options)]
+  const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
+  const router = useMemo(
+    () => createRouter(routes, createHistory(), tracked),
+    [routes, createHistory, ...Object.keys(tracked), ...Object.values(tracked)]
   );
+  return setOptions(router, rest);
 }
 
 /**

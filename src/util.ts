@@ -33,3 +33,16 @@ export function createCurrentGuard() {
     }
   ] as const;
 }
+
+export function splitProps<
+  T extends object = object,
+  K extends keyof T = keyof T
+>(obj: T, keys: K[]): [Pick<T, K>, Omit<T, K>] {
+  const picked = {} as any;
+  const rest = {...obj};
+  keys.forEach((key) => {
+    picked[key] = rest[key];
+    delete rest[key];
+  });
+  return [picked, rest];
+}
