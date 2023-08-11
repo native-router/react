@@ -13,8 +13,14 @@ import {
   createMemoryHistory,
   MemoryHistoryOptions
 } from 'history';
-import type {Options, ResolveView, Route, RouterInstance} from '@@/types';
-import {LoadingContext, useLoadingSetter, ViewProvider} from '@@/context';
+import type {
+  LoadStatus,
+  Options,
+  ResolveView,
+  Route,
+  RouterInstance
+} from '@@/types';
+import {LoadingContext, ViewProvider} from '@@/context';
 import {create, getCurrentView, listen, setOptions} from '@@/router';
 import defaultResolve from '@@/resolve-view';
 import {splitProps, uniqId} from '@@/util';
@@ -27,27 +33,7 @@ type Props = {
   children: ReactNode;
   routes: Route[] | Route;
   resolveView?: typeof defaultResolve;
-} & Options<ReactNode>;
-
-function BRouter({children}: {children: ReactNode}) {
-  const setLoading = useLoadingSetter();
-  // eslint-disable-next-line @typescript-eslint/no-use-before-define
-  const router = useRouter();
-
-  router.onLoadingChange = (status?) => {
-    setLoading(status && {key: uniqId(), status});
-  };
-
-  const [view, setView] = useState<ReactNode>(getCurrentView(router));
-
-  useEffect(() => listen(router, setView), [router]);
-
-  return children === 'undefined' ? (
-    view
-  ) : (
-    <ViewProvider value={view}>{children}</ViewProvider>
-  );
-}
+} & Omit<Options<ReactNode>, 'onLoadingChange'>;
 
 /**
  * Base Router Component.
@@ -55,17 +41,22 @@ function BRouter({children}: {children: ReactNode}) {
  */
 export function Router({
   router,
-  ...props
+  children
 }: {
   children: ReactNode;
   router: RouterInstance<Route, ReactNode>;
 }) {
+  const [view, setView] = useState<ReactNode>(getCurrentView(router));
+
+  useEffect(() => listen(router, setView), [router]);
   return (
-    <LoadingContext.Provider>
-      <RouterContext.Provider value={router}>
-        <BRouter {...props} />
-      </RouterContext.Provider>
-    </LoadingContext.Provider>
+    <RouterContext.Provider value={router}>
+      {children === 'undefined' ? (
+        view
+      ) : (
+        <ViewProvider value={view}>{children}</ViewProvider>
+      )}
+    </RouterContext.Provider>
   );
 }
 
@@ -81,34 +72,45 @@ export function createRouter(
 }
 
 function useNewRouter(
-  routes: Route | Route[],
-  createHistory: () => History,
-  options: Options<ReactNode>
+  {routes, children, ...options}: Props,
+  createHistory: () => History
 ) {
   const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
   const router = useMemo(
     () => createRouter(routes, createHistory(), tracked),
     [routes, createHistory, ...Object.keys(tracked), ...Object.values(tracked)]
   );
-  return setOptions(router, rest);
+
+  const [loading, setLoading] = useState<LoadStatus>();
+  setOptions(router, {
+    ...rest,
+    onLoadingChange(status) {
+      setLoading(status && {key: uniqId(), status});
+    }
+  });
+
+  const r = useMemo(
+    () => <Router router={router}>{children}</Router>,
+    [router, children]
+  );
+
+  return <LoadingContext.Provider value={loading}>{r}</LoadingContext.Provider>;
 }
 
 /**
  * History mode Router Component.
  * @group Components
  */
-export function HistoryRouter({children, routes, ...options}: Props) {
-  const router = useNewRouter(routes, createBrowserHistory, options);
-  return <Router router={router}>{children}</Router>;
+export function HistoryRouter(props: Props) {
+  return useNewRouter(props, createBrowserHistory);
 }
 
 /**
  * Hash mode Router Component.
  * @group Components
  */
-export function HashRouter({children, routes, ...options}: Props) {
-  const router = useNewRouter(routes, createHashHistory, options);
-  return <Router router={router}>{children}</Router>;
+export function HashRouter(props: Props) {
+  return useNewRouter(props, createHashHistory);
 }
 
 /**
@@ -118,16 +120,13 @@ export function HashRouter({children, routes, ...options}: Props) {
 export function MemoryRouter({
   initialEntries,
   initialIndex,
-  children,
-  routes,
-  ...options
+  ...props
 }: Props & MemoryHistoryOptions) {
   const createHistory = useMemo(
     () => () => createMemoryHistory({initialEntries, initialIndex}),
     [initialEntries, initialIndex]
   );
-  const router = useNewRouter(routes, createHistory, options);
-  return <Router router={router}>{children}</Router>;
+  return useNewRouter(props, createHistory);
 }
 
 /**

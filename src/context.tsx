@@ -1,9 +1,4 @@
 import {createContext, ReactNode, useContext, useMemo} from 'react';
-import {
-  createStateContext,
-  useSetterContext,
-  useValueContext
-} from './state-context';
 import type {Context, LoadStatus, Route} from './types';
 
 const ViewContext = createContext<ReactNode>(null);
@@ -78,18 +73,11 @@ export function useData(name?: string) {
   return name ? namedData[name] : data;
 }
 
-export const LoadingContext = createStateContext<LoadStatus>();
+export const LoadingContext = createContext<LoadStatus | undefined>(undefined);
 
 /**
  * @group Hooks
  */
 export function useLoading() {
-  return useValueContext(LoadingContext);
-}
-
-/**
- * @group Hooks
- */
-export function useLoadingSetter() {
-  return useSetterContext(LoadingContext);
+  return useContext(LoadingContext);
 }
