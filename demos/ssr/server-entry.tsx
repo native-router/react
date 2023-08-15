@@ -5,7 +5,7 @@ import {routes} from '../views';
 
 type Options = Parameters<typeof resolveServerView>[2];
 
-export default function render(location: Location, options?: Options) {
+export default function render(location: Location | string, options?: Options) {
   return resolveServerView(routes, location, options).then((view) =>
     ReactDOMServer.renderToString(view)
   );

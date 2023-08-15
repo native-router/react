@@ -1,33 +1,27 @@
 import {createMemoryHistory} from 'history';
-import {ReactElement} from 'react';
-import {create, resolve} from './router';
+import {ReactElement, ReactNode} from 'react';
+import {Router} from './components/Router';
 import {
-  getViewData,
   createHydrateResolveView,
+  getViewData,
   resolveViewServer
 } from './resolve-view';
-import type {Location, Options, Route} from './types';
-import {Router} from './components/Router';
+import {create, resolve, toLocation} from './router';
+import type {Location, Options, Route, RouterInstance} from './types';
+import {isString} from './util';
 
 const defaultHydrateKey = '_nativeRouterReactSSRData';
 
-// eslint-disable-next-line import/prefer-default-export
-export function resolveServerView(
-  routes: Route | Route[],
+export function resolveServerViewBase(
+  router: RouterInstance<Route, ReactNode>,
   location: Location,
-  options?: Options<ReactElement> & {
+  options?: {
     scriptAttributes?: Record<string, string>;
     hydrateKey?: string;
   }
 ) {
-  const router = create(
-    routes,
-    createMemoryHistory({initialEntries: [location]}),
-    resolveViewServer,
-    options
-  );
-  return resolve(router, location).then((view) => {
-    const data = getViewData(view);
+  return resolve<Route, ReactNode>(router, location).then((view) => {
+    const data = getViewData(view as ReactElement);
     return (
       <>
         <Router router={router}>{view}</Router>
@@ -44,6 +38,35 @@ export function resolveServerView(
       </>
     );
   });
+}
+
+export function resolveServerView(
+  routes: Route | Route[],
+  location: Location | string,
+  {
+    scriptAttributes,
+    hydrateKey,
+    ...options
+  }: Options<ReactElement> & {
+    scriptAttributes?: Record<string, string>;
+    hydrateKey?: string;
+  } = {}
+) {
+  const router = create(
+    routes,
+    createMemoryHistory({initialEntries: [location]}),
+    resolveViewServer,
+    options
+  );
+
+  return resolveServerViewBase(
+    router,
+    isString(location) ? toLocation(router, location) : location,
+    {
+      scriptAttributes,
+      hydrateKey
+    }
+  );
 }
 
 export function resolveClientView(

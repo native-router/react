@@ -46,3 +46,7 @@ export function splitProps<
   });
   return [picked, rest];
 }
+
+export function isString(maybeString: unknown): maybeString is string {
+  return typeof maybeString === 'string';
+}

@@ -156,7 +156,7 @@ export function toLocation<R extends BaseRoute = BaseRoute, V = any>(
     hash: '',
     ...parsePath(baseUrl + to),
     state
-  } as Location;
+  };
 }
 
 /**
@@ -256,7 +256,6 @@ export function commitReplace<R extends BaseRoute = BaseRoute, V = any>(
 ): Promise<void> {
   const {history, currentGuard, onLoadingChange = noop} = router;
   const {index} = getHistoryState(router);
-  // TODO: Redesign loading
   // TODO: Need a `resolving` ?
   if (router.resolving) {
     onLoadingChange();
