@@ -10,6 +10,7 @@ import type {
   HistoryState
 } from './types';
 import {createCurrentGuard, noop, reject} from './util';
+import {NotFoundError} from './errors';
 
 /**
  * Create a router instance.
@@ -176,8 +177,7 @@ export function resolve<R extends BaseRoute = BaseRoute, V = any>(
   return (
     matched
       ? resolveView(matched, {router, location})
-      : // TODO: Custom Error
-        Promise.reject(new Error('Not Found'))
+      : Promise.reject(new NotFoundError(location.pathname))
   ).catch(errorHandler);
 }
 
@@ -256,8 +256,8 @@ export function commitReplace<R extends BaseRoute = BaseRoute, V = any>(
 ): Promise<void> {
   const {history, currentGuard, onLoadingChange = noop} = router;
   const {index} = getHistoryState(router);
-  // TODO: Need a `resolving` ?
   if (router.resolving) {
+    // Cancel current resolve
     onLoadingChange();
   }
   router.resolving = location;
