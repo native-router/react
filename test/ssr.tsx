@@ -2,7 +2,7 @@ import sinon from 'sinon';
 import {resolveClientView, resolveServerView} from '@@/ssr';
 import {render} from '@testing-library/react';
 import ReactDOMServer from 'react-dom/server';
-import {useData} from 'native-router-react';
+import {useData} from '@native-router/react';
 
 describe('SSR', () => {
   afterEach(async () => {

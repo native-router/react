@@ -1,5 +1,5 @@
 import {css} from '@linaria/core';
-import {useData} from 'native-router-react';
+import {useData} from '@native-router/react';
 import {User} from '@/types/user';
 
 export default function UserProfile() {

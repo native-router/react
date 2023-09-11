@@ -1,5 +1,5 @@
 import {css} from '@linaria/core';
-import {Link, View} from 'native-router-react';
+import {Link, View} from '@native-router/react';
 
 export default function Layout() {
   return (
@@ -47,7 +47,7 @@ export default function Layout() {
             <a href={`${process.env.BASE_URL}?memory`}>memory</a>
           </li>
         </ul>
-        <a href="//wmzy.github.io/native-router-react/">docs</a>
+        <a href="//wmzy.github.io/@native-router/react/">docs</a>
       </nav>
       <main
         className={css`

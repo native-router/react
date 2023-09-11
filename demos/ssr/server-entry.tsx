@@ -1,6 +1,6 @@
 import ReactDOMServer from 'react-dom/server';
-import {resolveServerView} from 'native-router-react/server';
-import type {Location} from 'native-router-react';
+import {resolveServerView} from '@native-router/react/server';
+import type {Location} from '@native-router/react';
 import {routes} from '../views';
 
 type Options = Parameters<typeof resolveServerView>[2];

@@ -8,18 +8,18 @@ import type {Plugin} from 'vite';
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
 const isSSR = process.env.SSR === 'true';
-const base = buildDemo ? '/native-router-react/demos/' : '/demos/';
+const base = buildDemo ? '/@native-router/react/demos/' : '/demos/';
 
 export default defineConfig({
   base: isSSR ? '/' : base,
   resolve: {
     alias: [
       {
-        find: 'native-router-react/server',
+        find: '@native-router/react/server',
         replacement: `${path.join(__dirname, 'src/server.tsx')}`
       },
       {
-        find: 'native-router-react',
+        find: '@native-router/react',
         replacement: `${path.join(__dirname, 'src/index.tsx')}`
       },
       {
@@ -45,7 +45,7 @@ export default defineConfig({
         minify: 'terser',
         sourcemap: true,
         lib: {
-          name: 'native-router-react',
+          name: '@native-router/react',
           formats: ['es'],
           entry: {
             index: 'src/index.tsx',
