@@ -1,4 +1,3 @@
-import type {Path, MatchResult} from 'path-to-regexp';
 import type {History, Path as HPath} from 'history';
 import type {
   AnchorHTMLAttributes,
@@ -7,21 +6,13 @@ import type {
   DetailedHTMLProps,
   ReactNode
 } from 'react';
+import type { BaseRoute, Matched } from '@native-router/core';
 
 export type Location<T = any> = HPath & {state: T};
 
 export type HistoryState = {locationStack: Location[]; index: number} | null;
 
 export type Awaitable<T> = T | Promise<T>;
-
-export type BaseRoute<T = any> = {
-  path?: Path;
-  children?: BaseRoute<T>[];
-} & Omit<T, 'path' | 'children'>;
-
-export type Matched<R extends BaseRoute = BaseRoute> = {route: R} & MatchResult<
-  Record<string, string>
->;
 
 export type ResolveViewContext<R extends BaseRoute> = {
   // eslint-disable-next-line no-use-before-define

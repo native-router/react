@@ -1,5 +1,6 @@
 import type {ComponentType, ReactElement} from 'react';
-import type {Context, Matched, ResolveViewContext, Route} from '@@/types';
+import type {Context, ResolveViewContext} from '@@/types';
+import type {Matched, Route} from '@native-router/core';
 import {DataProvider, MatchedContext, View, ViewProvider} from './context';
 
 /**

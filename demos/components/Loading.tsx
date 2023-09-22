@@ -1,7 +1,8 @@
 import {css} from '@linaria/core';
 import {CSSProperties, ReactPortal, useMemo, useEffect, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {cancel, useLoading, useRouter} from '@native-router/react';
+import {cancel} from '@native-router/core';
+import {useLoading, useRouter} from '@native-router/react';
 
 export default function Loading(): ReactPortal | null {
   const router = useRouter();

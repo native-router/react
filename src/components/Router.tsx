@@ -21,9 +21,9 @@ import type {
   RouterInstance
 } from '@@/types';
 import {LoadingContext, ViewProvider} from '@@/context';
-import {create, getCurrentView, listen, setOptions} from '@@/router';
+import {create, getCurrentView, listen, setOptions} from '@native-router/core';
+import {splitProps, uniqId} from '@native-router/core/util';
 import defaultResolve from '@@/resolve-view';
-import {splitProps, uniqId} from '@@/util';
 
 const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
   null

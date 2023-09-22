@@ -1,4 +1,5 @@
-import {Link, refresh, useRouter} from '@native-router/react';
+import {refresh} from '@native-router/core';
+import {Link, useRouter} from '@native-router/react';
 
 type Props = {
   error: Error;

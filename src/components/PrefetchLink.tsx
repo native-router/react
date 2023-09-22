@@ -1,4 +1,4 @@
-import {commit, createHref, resolve, toLocation} from '@@/router';
+import {commit, createHref, resolve, toLocation} from '@native-router/core';
 import type {LinkProps} from '@@/types';
 import {
   createContext,

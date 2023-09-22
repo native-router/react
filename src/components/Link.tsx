@@ -1,4 +1,4 @@
-import {createHref, navigate} from '@@/router';
+import {createHref, navigate} from '@native-router/core';
 import type {LinkProps} from '@@/types';
 import {useRef, type MouseEvent} from 'react';
 import {useRouter} from './Router';

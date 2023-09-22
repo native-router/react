@@ -11,8 +11,9 @@ module.exports = {
   env: {
     test: {
       presets: [
-        '@linaria',
-        ['@babel/env', {targets: {node: true}, modules: 'commonjs'}],
+        ['@linaria'],
+        // ['@babel/env', {targets: {node: true}, modules: 'commonjs'}],
+        ['@babel/env', {targets: {node: true}, modules: false}],
         '@babel/typescript',
         [
           '@babel/preset-react',
@@ -27,6 +28,8 @@ module.exports = {
           {
             alias: {
               '@native-router/react': `${__dirname}/src/index.tsx`,
+              // '@native-router/core': `@native-router/core/dist/index.mjs`,
+              // '@native-router/core/util': `@native-router/core/dist/util.mjs`,
               '^@@/(.*)': `${__dirname}/src/\\1`,
               '^@/(.*)': `${__dirname}/demos/\\1`
             },
