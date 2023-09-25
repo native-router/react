@@ -7,7 +7,8 @@ import {
   resolveViewServer
 } from './resolve-view';
 import {create, resolve, toLocation} from '@native-router/core';
-import type {Location, Options, Route, RouterInstance} from './types';
+import type {Location, Options, RouterInstance} from '@native-router/core';
+import type {Route} from './types';
 import {isString} from '@native-router/core/util';
 
 const defaultHydrateKey = '_nativeRouterReactSSRData';

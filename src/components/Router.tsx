@@ -15,13 +15,15 @@ import {
 } from 'history';
 import type {
   LoadStatus,
-  Options,
-  ResolveView,
   Route,
-  RouterInstance
 } from '@@/types';
 import {LoadingContext, ViewProvider} from '@@/context';
 import {create, getCurrentView, listen, setOptions} from '@native-router/core';
+import type {
+  Options,
+  ResolveView,
+  RouterInstance
+} from '@native-router/core';
 import {splitProps, uniqId} from '@native-router/core/util';
 import defaultResolve from '@@/resolve-view';
 
