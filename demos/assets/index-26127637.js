@@ -1,1 +1,0 @@
-import{j as e}from"./index-d3d45e07.js";function i(){return e.jsxs("div",{className:"cmoxuxe",children:[e.jsx("h1",{children:"About Native Router"}),e.jsx("p",{children:"Native Router is another router lib which work like the native browser."})]})}export{i as default};
