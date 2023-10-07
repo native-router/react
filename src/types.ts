@@ -4,7 +4,12 @@ import type {
   DetailedHTMLProps,
   ReactNode
 } from 'react';
-import type { BaseRoute, Matched, Location, RouterInstance } from '@native-router/core';
+import type {
+  BaseRoute,
+  Matched,
+  Location,
+  RouterInstance
+} from '@native-router/core';
 
 export type ResolveViewContext<R extends BaseRoute> = {
   // eslint-disable-next-line no-use-before-define

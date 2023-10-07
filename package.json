@@ -33,7 +33,7 @@
     "build": "vite build && tsc -p tsconfig.production.json && tsc-alias -p tsconfig.production.json",
     "commit": "lint-staged && git-cz -n",
     "coverage": "c8 report --reporter=text-lcov > ./coverage/coverage.txt",
-    "lint": "eslint --fix src test demos *.js --ext .js,.jsx,.ts,.tsx",
+    "lint": "eslint --fix src test demos *.cjs --ext .mjs,.cjs,.js,.jsx,.ts,.tsx",
     "doc:gen": "typedoc",
     "build:demo": "cross-env BABEL_ENV=development BUILD_DEMO=true vite build",
     "deploy": "npm run doc:gen && npm run build:demo && gh-pages -d dist",

@@ -13,17 +13,10 @@ import {
   createMemoryHistory,
   MemoryHistoryOptions
 } from 'history';
-import type {
-  LoadStatus,
-  Route,
-} from '@@/types';
+import type {LoadStatus, Route} from '@@/types';
 import {LoadingContext, ViewProvider} from '@@/context';
 import {create, getCurrentView, listen, setOptions} from '@native-router/core';
-import type {
-  Options,
-  ResolveView,
-  RouterInstance
-} from '@native-router/core';
+import type {Options, ResolveView, RouterInstance} from '@native-router/core';
 import {splitProps, uniqId} from '@native-router/core/util';
 import defaultResolve from '@@/resolve-view';
 

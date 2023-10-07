@@ -1,15 +1,15 @@
 import {createMemoryHistory} from 'history';
 import {ReactElement, ReactNode} from 'react';
+import {create, resolve, toLocation} from '@native-router/core';
+import type {Location, Options, RouterInstance} from '@native-router/core';
+import {isString} from '@native-router/core/util';
 import {Router} from './components/Router';
 import {
   createHydrateResolveView,
   getViewData,
   resolveViewServer
 } from './resolve-view';
-import {create, resolve, toLocation} from '@native-router/core';
-import type {Location, Options, RouterInstance} from '@native-router/core';
 import type {Route} from './types';
-import {isString} from '@native-router/core/util';
 
 const defaultHydrateKey = '_nativeRouterReactSSRData';
 
