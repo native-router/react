@@ -46,15 +46,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/wmzy/@native-router/react"
+    "url": "https://github.com/native-router/react"
   },
   "sideEffects": false,
   "author": "wmzy",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/wmzy/@native-router/react/issues"
+    "url": "https://github.com/native-router/react/issues"
   },
-  "homepage": "https://github.com/wmzy/@native-router/react",
+  "homepage": "https://github.com/native-router/react",
   "engines": {
     "node": ">=14"
   },
