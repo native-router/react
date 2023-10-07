@@ -8,7 +8,7 @@ import type {Plugin} from 'vite';
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
 const isSSR = process.env.SSR === 'true';
-const base = buildDemo ? '/@native-router/react/demos/' : '/demos/';
+const base = buildDemo ? '/react/demos/' : '/demos/';
 
 export default defineConfig({
   base: isSSR ? '/' : base,

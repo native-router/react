@@ -5,6 +5,6 @@
     "required-first"
   ],
   "navigationLinks": {
-    "Demos": "/@native-router/react/demos/"
+    "Demos": "/react/demos/"
   }
 }
