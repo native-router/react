@@ -46,7 +46,7 @@ export default defineConfig({
         sourcemap: true,
         lib: {
           name: '@native-router/react',
-          formats: ['es'],
+          formats: ['es', 'cjs'],
           entry: {
             index: 'src/index.tsx',
             server: 'src/server.tsx'
