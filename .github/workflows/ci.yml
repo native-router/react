@@ -30,10 +30,4 @@ jobs:
       - name: Lint Sources with ESLint
         run: pnpm run lint
       - name: Run Test
-        run: pnpm test && pnpm run coverage
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          files: ./coverage/coverage.txt
+        run: pnpm test
