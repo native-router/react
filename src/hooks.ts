@@ -19,12 +19,3 @@ export function useLocation() {
   const router = useRouter();
   return router.state.location;
 }
-
-/**
- * Get matched route info
- * @group Hooks
- */
-export function useMatched() {
-  const router = useRouter();
-  return router.state.matched;
-}
