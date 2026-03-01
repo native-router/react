@@ -77,3 +77,41 @@ See [demos](/demos/) for a complete example.
 ## Documentation 
 
 [API](https://native-router.github.io/react/modules.html)
+
+## Advanced Features
+
+### Route Guards
+
+```tsx
+import { Router } from '@native-router/react';
+
+const routes = [
+  {
+    path: '/admin',
+    guard: (to, from, ctx) => {
+      if (!isAuthenticated) return false;
+      return true;
+    },
+    meta: { requiresAuth: true },
+    children: [...]
+  }
+];
+
+function App() {
+  return <Router routes={routes} />;
+}
+```
+
+### Hooks
+
+```tsx
+import { useParams, useLocation, useMatched } from '@native-router/react';
+
+function Profile() {
+  const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const matched = useMatched();
+  
+  return <div>User ID: {id}</div>;
+}
+```
