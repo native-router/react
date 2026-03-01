@@ -1,4 +1,4 @@
-name: Run Tests & Linters
+name: CI
 
 on:
   push:
@@ -9,31 +9,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [16.x]
-
     steps:
-      - uses: actions/checkout@v3
-      - uses: pnpm/action-setup@v2
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: 8
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v3
+          version: 9
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
           cache: pnpm
-      - name: Install Dependencies
-        run: |
-          pnpm install
-      - name: Lint Sources with ESLint
-        run: npm run lint
-      - name: Run Test
-        run: npm test && npm run coverage
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          files: ./coverage/coverage.txt
+      - run: pnpm install
+      - run: pnpm lint
+      - run: pnpm test

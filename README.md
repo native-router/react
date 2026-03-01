@@ -77,3 +77,18 @@ See [demos](/demos/) for a complete example.
 ## Documentation 
 
 [API](https://native-router.github.io/react/modules.html)
+
+import { Router } from '@native-router/react';
+
+const routes = [
+  {
+    path: '/admin',
+    children: [...]
+  }
+];
+
+function App() {
+  return <Router routes={routes} />;
+}
+```
+
