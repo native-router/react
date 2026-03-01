@@ -83,11 +83,6 @@ import { Router } from '@native-router/react';
 const routes = [
   {
     path: '/admin',
-    guard: (to, from, ctx) => {
-      if (!isAuthenticated) return false;
-      return true;
-    },
-    meta: { requiresAuth: true },
     children: [...]
   }
 ];
