@@ -102,16 +102,3 @@ function App() {
 }
 ```
 
-### Hooks
-
-```tsx
-import { useParams, useLocation, useMatched } from '@native-router/react';
-
-function Profile() {
-  const { id } = useParams<{ id: string }>();
-  const location = useLocation();
-  const matched = useMatched();
-  
-  return <div>User ID: {id}</div>;
-}
-```
