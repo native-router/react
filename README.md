@@ -78,11 +78,6 @@ See [demos](/demos/) for a complete example.
 
 [API](https://native-router.github.io/react/modules.html)
 
-## Advanced Features
-
-### Route Guards
-
-```tsx
 import { Router } from '@native-router/react';
 
 const routes = [
