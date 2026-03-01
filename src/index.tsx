@@ -4,5 +4,6 @@ export {default as PrefetchLink, usePrefetch} from './components/PrefetchLink';
 export {useView, View, useData, useLoading, useMatched} from './context';
 export {default as defaultResolveView} from './resolve-view';
 export * from './types';
+export * from './hooks';
 
 export {resolveClientView} from './ssr';
