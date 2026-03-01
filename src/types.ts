@@ -25,12 +25,22 @@ export type Context<T extends BaseRoute> = {
   params: Record<string, string>;
 };
 
+export type GuardResult = boolean | Promise<boolean> | void | Promise<void>;
+
+export type RouteGuard = (
+  to: string,
+  from: string | null,
+  ctx: Context<Route>
+) => GuardResult;
+
 export type Route = BaseRoute<{
   name?: string;
   data?(ctx: Context<Route>): any | Promise<any>;
   component?(
     ctx: Context<Route>
   ): ComponentType | Promise<ComponentType | {default: ComponentType}>;
+  guard?: RouteGuard;
+  meta?: Record<string, any>;
 }>;
 
 export type LoadStatus = {
