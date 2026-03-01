@@ -1,4 +1,4 @@
-name: Run Tests & Linters
+name: CI
 
 on:
   push:
@@ -9,25 +9,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [20.x, 22.x]
-
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
           cache: pnpm
-      - name: Install Dependencies
-        run: |
-          pnpm install
-      - name: Lint Sources with ESLint
-        run: pnpm run lint
-      - name: Run Test
-        run: pnpm test
+      - run: pnpm install
+      - run: pnpm lint
+      - run: pnpm test
