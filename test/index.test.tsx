@@ -1,22 +1,22 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import {describe, it, expect, vi} from 'vitest';
+import {render, screen} from '@testing-library/react';
 import React from 'react';
+
+import {Link, View, useData, useLoading, useMatched} from '../src/index';
 
 // Mock the core module
 vi.mock('@native-router/core', () => ({
-  toLocation: vi.fn((router: unknown, to: string) => ({ pathname: to })),
-  createHref: vi.fn((router: unknown, to: string) => '/test'),
-  resolve: vi.fn(async () => ({ default: null })),
+  toLocation: vi.fn(() => ({pathname: '/test'})),
+  createHref: vi.fn(() => '/test'),
+  resolve: vi.fn(async () => ({default: null})),
   commit: vi.fn(),
-  navigate: vi.fn(),
+  navigate: vi.fn()
 }));
-
-import { Link, View, useData, useLoading, useMatched } from '../src/index';
 
 describe('Router', () => {
   describe('exports', () => {
     it('should export Link', async () => {
-      const { Link: LinkComponent } = await import('../src/index');
+      const {Link: LinkComponent} = await import('../src/index');
       expect(LinkComponent).toBeDefined();
     });
 
@@ -45,7 +45,11 @@ describe('Router', () => {
 
   describe('Link', () => {
     it('should Render with children', () => {
-      render(<Link to="/test"><span>Child</span></Link>);
+      render(
+        <Link to="/test">
+          <span>Child</span>
+        </Link>
+      );
       expect(screen.getByText('Child')).toBeDefined();
     });
   });

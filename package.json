@@ -124,7 +124,7 @@
     "typedoc-plugin-mark-react-functional-components": "^0.2.2",
     "typedoc-plugin-missing-exports": "^2.1.0",
     "typescript": "^5.2.2",
-    "vite": "^4.4.9",
+    "vite": "^7.3.1",
     "vitest": "^4.0.18"
   }
 }
