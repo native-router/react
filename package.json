@@ -39,7 +39,7 @@
     "doc:gen": "typedoc",
     "build:demo": "cross-env BABEL_ENV=development BUILD_DEMO=true vite build",
     "deploy": "npm run doc:gen && npm run build:demo && gh-pages -d dist",
-    "test": "cross-env NODE_ENV=test c8 mocha",
+    "test": "vitest run",
     "test:watch": "npm test -- --watch",
     "preversion": "npm run build",
     "postversion": "npm publish",
@@ -66,7 +66,6 @@
   },
   "dependencies": {
     "@native-router/core": "^1.0.3",
-    "@testing-library/dom": "^10.4.1",
     "history": "^5.3.0"
   },
   "devDependencies": {
@@ -77,6 +76,7 @@
     "@linaria/babel-preset": "^5.0.2",
     "@linaria/core": "^5.0.1",
     "@linaria/vite": "^5.0.2",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^14.3.1",
     "@types/mocha": "^10.0.1",
     "@types/node": "^20.6.5",
@@ -86,6 +86,8 @@
     "@typescript-eslint/eslint-plugin": "^6.7.2",
     "@typescript-eslint/parser": "^6.7.2",
     "@vitejs/plugin-react": "^4.1.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "^4.0.18",
     "babel-plugin-module-resolver": "^5.0.0",
     "c8": "^8.0.1",
     "commitizen": "^4.3.0",
@@ -122,6 +124,7 @@
     "typedoc-plugin-mark-react-functional-components": "^0.2.2",
     "typedoc-plugin-missing-exports": "^2.1.0",
     "typescript": "^5.2.2",
-    "vite": "^4.4.9"
+    "vite": "^4.4.9",
+    "vitest": "^4.0.18"
   }
 }
