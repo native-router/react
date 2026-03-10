@@ -31,7 +31,7 @@ export function usePrefetch() {
  */
 export default function PrefetchLink({to, children, ...rest}: LinkProps) {
   const router = useRouter();
-  const viewPromiseRef = useRef<undefined | Promise<ReactNode>>();
+  const viewPromiseRef = useRef<undefined | Promise<ReactNode>>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
   const [view, setView] = useState<ReactNode>();
