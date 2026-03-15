@@ -22,7 +22,7 @@ module.exports = {
     'react/react-in-jsx-scope': 'off',
     'no-use-before-define': ['error', {functions: false}],
     '@typescript-eslint/no-use-before-define': ['error', {functions: false}],
-    "import/no-extraneous-dependencies": ["error", {"devDependencies": ["{demos,test}/**/*"]}],
+    "import/no-extraneous-dependencies": ["error", {"devDependencies": ["{demos,test}/**/*", "vitest.config.ts", "vite.config.ts"]}],
     'no-console': process.env.NODE_ENV === 'production' ? 'error' : 'warn',
     'no-debugger': process.env.NODE_ENV === 'production' ? 'error' : 'off'
   },
