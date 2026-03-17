@@ -40,8 +40,6 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "prepublishOnly": "npm run build",
-    "postpublish": "git push --follow-tags && npm run deploy",
     "serve": "vite preview"
   },
   "repository": {
