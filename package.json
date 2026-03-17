@@ -44,7 +44,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/native-router/react"
+    "url": "git+https://github.com/native-router/react.git"
   },
   "sideEffects": false,
   "author": "wmzy",
@@ -108,6 +108,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "rollup-plugin-type-as-json-schema": "^0.2.6",
+    "semantic-release": "^25.0.3",
     "terser": "^5.20.0",
     "tsc-alias": "^1.8.8",
     "typedoc": "^0.25.1",
