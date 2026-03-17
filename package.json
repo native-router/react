@@ -4,14 +4,14 @@
   "type": "module",
   "exports": {
     ".": {
+      "types": "./dist/types/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/types/index.d.ts"
+      "require": "./dist/index.cjs"
     },
     "./server": {
+      "types": "./dist/types/server.d.ts",
       "import": "./dist/server.js",
-      "require": "./dist/server.cjs",
-      "types": "./dist/types/server.d.ts"
+      "require": "./dist/server.cjs"
     }
   },
   "keywords": [
