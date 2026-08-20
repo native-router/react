@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import {defineConfig} from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
@@ -12,13 +12,13 @@ export default defineConfig({
       lines: 30,
       functions: 30,
       branches: 30,
-      statements: 30,
-    },
+      statements: 30
+    }
   },
   resolve: {
     alias: {
       '@@': path.resolve(__dirname, './src'),
-      '@': path.resolve(__dirname, './demos'),
-    },
-  },
+      '@': path.resolve(__dirname, './demos')
+    }
+  }
 });
