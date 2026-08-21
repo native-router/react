@@ -5,4 +5,4 @@ export {useView, View, useData, useLoading, useMatched} from './context';
 export {default as defaultResolveView} from './resolve-view';
 export * from './types';
 
-export {resolveClientView} from './ssr';
+export {hydrate} from './ssr';

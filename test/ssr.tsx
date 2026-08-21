@@ -1,34 +1,77 @@
-import sinon from 'sinon';
-import {resolveClientView, resolveServerView} from '@@/ssr';
-import {render} from '@testing-library/react';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import {hydrate, resolveServerView} from '@@/ssr';
+import {act, render} from '@testing-library/react';
 import ReactDOMServer from 'react-dom/server';
-import {useData} from '@native-router/react';
+import {navigate} from '@native-router/core';
+import {Router, useData} from '@native-router/react';
 
 describe('SSR', () => {
-  afterEach(async () => {
-    sinon.restore();
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, '', '/');
+    // eslint-disable-next-line no-underscore-dangle
+    delete (window as any)._nativeRouterReactSSRData;
+    document.body.innerHTML = '';
   });
 
   it('should hydrate without error', async () => {
     const route = {path: '/', component: () => Test, data: () => 'data'};
-    return resolveServerView(route, '/')
-      .then((view) => {
-        const html = ReactDOMServer.renderToString(view);
-        document.body.innerHTML = `<div id="root">${html}</div>`;
+    const view = await resolveServerView(route, '/');
+    const html = ReactDOMServer.renderToString(view);
+    document.body.innerHTML = `<div id="root">${html}</div>`;
+    // eslint-disable-next-line no-eval
+    eval(document.body.querySelector('script')!.innerHTML);
 
-        // eslint-disable-next-line no-eval
-        eval(document.body.querySelector('script')!.innerHTML);
-      })
-      .then(() => resolveClientView(route))
-      .then((view) => {
-        const warnSpy = sinon.spy(console, 'error');
-        render(view, {
-          container: document.getElementById('root')!,
-          hydrate: true
-        });
-        // @ts-ignore
-        warnSpy.should.not.be.called();
-      });
+    const errorSpy = vi.spyOn(console, 'error');
+    const {view: clientView, router} = await hydrate(route);
+    render(<Router router={router}>{clientView}</Router>, {
+      container: document.getElementById('root')!,
+      hydrate: true
+    });
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('should escape </script> in serialized data', async () => {
+    const injection = `</script><script>alert("xss")</script>\u2028`;
+    const route = {
+      path: '/',
+      component: () => Test,
+      data: () => injection
+    };
+    const view = await resolveServerView(route, '/');
+    const html = ReactDOMServer.renderToString(view);
+    document.body.innerHTML = `<div id="root">${html}</div>`;
+
+    const script = document.body.querySelector('script')!;
+    expect(script.innerHTML).toContain('\\u003c');
+    expect(script.innerHTML).not.toContain('</script>');
+
+    // The escaped payload is still valid JavaScript and keeps the data intact.
+    // eslint-disable-next-line no-eval
+    eval(script.innerHTML);
+    // eslint-disable-next-line no-underscore-dangle
+    expect((window as any)._nativeRouterReactSSRData.data[0]).toBe(injection);
+  });
+
+  it('should navigate with browser history after hydrate', async () => {
+    const routes = [
+      {path: '/', component: () => Test, data: () => 'data'},
+      {path: '/other', component: () => Other}
+    ];
+    const view = await resolveServerView(routes, '/');
+    const html = ReactDOMServer.renderToString(view);
+    document.body.innerHTML = `<div id="root">${html}</div>`;
+    // eslint-disable-next-line no-eval
+    eval(document.body.querySelector('script')!.innerHTML);
+
+    const {view: clientView, router} = await hydrate(routes);
+    render(<Router router={router}>{clientView}</Router>, {
+      container: document.getElementById('root')!,
+      hydrate: true
+    });
+    expect(router.history.createHref('/x')).toBe('/x');
+    await act(() => navigate(router, '/other'));
+    expect(window.location.pathname).toBe('/other');
   });
 });
 
@@ -39,4 +82,8 @@ function Test() {
       test <span>{data}</span>
     </div>
   );
+}
+
+function Other() {
+  return <div>other</div>;
 }

@@ -1,14 +1,14 @@
 import {hydrateRoot} from 'react-dom/client';
-import App, {routes} from '@/views';
-import {resolveClientView} from '@native-router/react';
+import {routes} from '@/views';
+import {hydrate, Router} from '@native-router/react';
 import {StrictMode} from 'react';
 
-resolveClientView(routes, {baseUrl: process.env.BASE_URL?.slice(0, -1)}).then(
-  (view) =>
+hydrate(routes, {baseUrl: process.env.BASE_URL?.slice(0, -1)}).then(
+  ({view, router}) =>
     hydrateRoot(
       document.getElementById('root')!,
       <StrictMode>
-        <App initial={view} />
+        <Router router={router}>{view}</Router>
       </StrictMode>
     )
 );

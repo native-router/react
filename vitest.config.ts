@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./test/setup.ts'],
+    include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)', 'test/ssr.tsx'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -17,6 +18,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@native-router/react/server': path.resolve(
+        __dirname,
+        './src/server.tsx'
+      ),
+      '@native-router/react': path.resolve(__dirname, './src/index.tsx'),
       '@@': path.resolve(__dirname, './src'),
       '@': path.resolve(__dirname, './demos')
     }

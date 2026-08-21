@@ -1,6 +1,6 @@
 import type {ComponentType, ReactElement} from 'react';
 import type {Context, ResolveViewContext, Route} from '@@/types';
-import type {Matched} from '@native-router/core';
+import type {Matched, mergeMatchedParams} from '@native-router/core';
 import {DataProvider, MatchedContext, View, ViewProvider} from './context';
 
 /**
@@ -52,10 +52,10 @@ function resolveViewBase(
   ) => any
 ) {
   return Promise.all(
-    matched.map(({params, route}, index) => {
+    matched.map(({route}, index) => {
       const ctx = {
         matched: matched!,
-        params,
+        params: mergeMatchedParams(matched, index),
         index,
         router,
         location
@@ -66,16 +66,31 @@ function resolveViewBase(
         return Promise.resolve(r).then((m) => ('default' in m ? m.default : m));
       }
 
+      // A level that fails to resolve (data or component) is replaced by its
+      // route-level errorComponent when configured; otherwise the error
+      // bubbles up to the global errorHandler as before.
       return Promise.all([
         resolveData(route.data, ctx),
         resolveComponent()
-      ]).then(([data, C]) => (
-        <DataProvider data={data} name={route.name}>
-          <MatchedContext.Provider value={ctx}>
-            <C />
-          </MatchedContext.Provider>
-        </DataProvider>
-      ));
+      ]).then(
+        ([data, C]) => (
+          <DataProvider data={data} name={route.name}>
+            <MatchedContext.Provider value={ctx}>
+              <C />
+            </MatchedContext.Provider>
+          </DataProvider>
+        ),
+        (error: Error) => {
+          if (!route.errorComponent) throw error;
+          return (
+            <DataProvider data={undefined} name={route.name}>
+              <MatchedContext.Provider value={ctx}>
+                <route.errorComponent error={error} ctx={ctx} />
+              </MatchedContext.Provider>
+            </DataProvider>
+          );
+        }
+      );
     })
   ).then((views) =>
     views

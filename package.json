@@ -54,15 +54,16 @@
   },
   "homepage": "https://github.com/native-router/react",
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   },
   "peerDependencies": {
     "react": "^17.0.0 || ^18.0.0 || ^19.0.0",
     "react-dom": "^17.0.0 || ^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "@native-router/core": "^1.0.3",
-    "history": "^5.3.0"
+    "@native-router/core": "^1.2.0",
+    "history": "^5.3.0",
+    "use-sync-external-store": "^1.6.0"
   },
   "devDependencies": {
     "@babel/core": "^7.22.20",
