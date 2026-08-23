@@ -1,7 +1,13 @@
-import {describe, it, expect, vi, beforeEach} from 'vitest';
+import {describe, it, expect, expectTypeOf, vi, beforeEach} from 'vitest';
 import {render, screen, act, fireEvent} from '@testing-library/react';
 import React from 'react';
-import {commit, create, resolve, setOptions} from '@native-router/core';
+import {
+  commit,
+  create,
+  navigate,
+  preload,
+  setOptions
+} from '@native-router/core';
 import type {Matched, RouterInstance} from '@native-router/core';
 
 import {
@@ -27,12 +33,19 @@ const {viewListeners} = vi.hoisted(() => ({
   viewListeners: [] as Array<(view: unknown) => void>
 }));
 
-// Mock the core module
-vi.mock('@native-router/core', () => ({
+// Mock the core module: pure helpers(search parsing, href creation, ...)
+// come from the real core, only the history-coupled functions are stubbed.
+vi.mock('@native-router/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@native-router/core')>()),
   toLocation: vi.fn(() => ({pathname: '/test'})),
   createHref: vi.fn(() => '/test'),
   resolve: vi.fn(async () => ({default: null})),
+  preload: vi.fn(async () => ({
+    location: {pathname: '/test'},
+    task: Promise.resolve({default: null})
+  })),
   commit: vi.fn(),
+  commitReplace: vi.fn(),
   navigate: vi.fn(),
   create: vi.fn(
     (
@@ -47,6 +60,14 @@ vi.mock('@native-router/core', () => ({
     })
   ),
   getCurrentView: vi.fn((router: any) => router.viewStack[0]),
+  mergeMatchedParams: vi.fn((matched: any[], index?: number) =>
+    Object.assign(
+      {},
+      ...(index === undefined ? matched : matched.slice(0, index + 1)).map(
+        (m) => m.params
+      )
+    )
+  ),
   listen: vi.fn((_router: any, onViewChange: (view: unknown) => void) => {
     viewListeners.push(onViewChange);
     return () => undefined;
@@ -78,6 +99,11 @@ describe('Router', () => {
 
     it('should export useData', () => {
       expect(useData).toBeDefined();
+    });
+
+    it('should export useSearch', async () => {
+      const {useSearch} = await import('../src/index');
+      expect(useSearch).toBeDefined();
     });
 
     it('should export useLoading', () => {
@@ -172,15 +198,15 @@ describe('Router', () => {
 
     it('should prefetch on hover (intent default) without duplicating tasks', async () => {
       renderLink({to: '/a'});
-      expect(resolve).not.toHaveBeenCalled();
+      expect(preload).not.toHaveBeenCalled();
       await act(async () => {
         fireEvent.mouseEnter(screen.getByTestId('target'));
       });
-      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(preload).toHaveBeenCalledTimes(1);
       await act(async () => {
         fireEvent.mouseEnter(screen.getByTestId('target'));
       });
-      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(preload).toHaveBeenCalledTimes(1);
       expect(await screen.findByText('view')).toBeDefined();
     });
 
@@ -189,12 +215,12 @@ describe('Router', () => {
       await act(async () => {
         fireEvent.focus(screen.getByTestId('target'));
       });
-      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(preload).toHaveBeenCalledTimes(1);
       expect(await screen.findByText('view')).toBeDefined();
     });
 
     it('should clear the stale error and view when `to` changes', async () => {
-      vi.mocked(resolve).mockRejectedValueOnce(new Error('old target failed'));
+      vi.mocked(preload).mockRejectedValueOnce(new Error('old target failed'));
       const {rerenderLink} = renderLink({to: '/a'});
       await act(async () => {
         fireEvent.mouseEnter(screen.getByTestId('target'));
@@ -208,7 +234,7 @@ describe('Router', () => {
       await act(async () => {
         fireEvent.mouseEnter(screen.getByTestId('target'));
       });
-      expect(resolve).toHaveBeenCalledTimes(2);
+      expect(preload).toHaveBeenCalledTimes(2);
       expect(await screen.findByText('view')).toBeDefined();
     });
 
@@ -219,7 +245,7 @@ describe('Router', () => {
       process.on('unhandledRejection', onProcessRejection);
       window.addEventListener('unhandledrejection', onWindowRejection);
       try {
-        vi.mocked(resolve).mockRejectedValueOnce(new Error('prefetch boom'));
+        vi.mocked(preload).mockRejectedValueOnce(new Error('prefetch boom'));
         renderLink({to: '/a'});
         await act(async () => {
           fireEvent.mouseEnter(screen.getByTestId('target'));
@@ -240,9 +266,12 @@ describe('Router', () => {
     });
 
     it('should re-resolve and commit when clicking after a failed prefetch', async () => {
-      vi.mocked(resolve).mockRejectedValueOnce(
-        new Error('first attempt fails')
-      );
+      // The entry resolves but its task rejects: the derived chain must
+      // still surface the failure and mark the entry as uncommittable.
+      vi.mocked(preload).mockResolvedValueOnce({
+        location: {pathname: '/a', search: '', hash: ''},
+        task: Promise.reject(new Error('first attempt fails'))
+      });
       renderLink({to: '/a'});
       await act(async () => {
         fireEvent.mouseEnter(screen.getByTestId('target'));
@@ -254,32 +283,36 @@ describe('Router', () => {
       await act(async () => {
         fireEvent.click(screen.getByTestId('target'));
       });
-      expect(resolve).toHaveBeenCalledTimes(2);
+      expect(preload).toHaveBeenCalledTimes(2);
       expect(commit).toHaveBeenCalledTimes(1);
-      const committedTask = vi.mocked(commit).mock.calls[0]?.[1];
+      const [committedTask, committedLocation] = vi
+        .mocked(commit)
+        .mock.calls[0]!.slice(1);
       await expect(committedTask).resolves.toEqual({default: null});
+      // The terminal location of the re-resolved entry is committed.
+      expect(committedLocation).toEqual({pathname: '/test'});
       expect(await screen.findByText('view')).toBeDefined();
     });
 
     it('should prefetch immediately on mount when prefetch="render"', async () => {
       renderLink({to: '/a', prefetch: 'render'});
-      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(preload).toHaveBeenCalledTimes(1);
       expect(await screen.findByText('view')).toBeDefined();
     });
 
     it('should not prefetch when prefetch="none" until clicked', async () => {
       renderLink({to: '/a', prefetch: 'none'});
-      expect(resolve).not.toHaveBeenCalled();
+      expect(preload).not.toHaveBeenCalled();
       await act(async () => {
         fireEvent.mouseEnter(screen.getByTestId('target'));
         fireEvent.focus(screen.getByTestId('target'));
       });
-      expect(resolve).not.toHaveBeenCalled();
+      expect(preload).not.toHaveBeenCalled();
 
       await act(async () => {
         fireEvent.click(screen.getByTestId('target'));
       });
-      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(preload).toHaveBeenCalledTimes(1);
       expect(commit).toHaveBeenCalledTimes(1);
       expect(await screen.findByText('view')).toBeDefined();
     });
@@ -294,7 +327,7 @@ describe('Router', () => {
         await act(async () => {
           fireEvent.mouseEnter(screen.getByTestId('target'));
         });
-        expect(resolve).not.toHaveBeenCalled();
+        expect(preload).not.toHaveBeenCalled();
 
         const observer = observers[0];
         await act(async () => {
@@ -303,7 +336,7 @@ describe('Router', () => {
             observer as unknown as IntersectionObserver
           );
         });
-        expect(resolve).toHaveBeenCalledTimes(1);
+        expect(preload).toHaveBeenCalledTimes(1);
         expect(observer?.disconnected).toBe(true);
         expect(await screen.findByText('view')).toBeDefined();
       } finally {
@@ -318,7 +351,7 @@ describe('Router', () => {
         expect(observers[0]?.disconnected).toBe(false);
         unmount();
         expect(observers[0]?.disconnected).toBe(true);
-        expect(resolve).not.toHaveBeenCalled();
+        expect(preload).not.toHaveBeenCalled();
       } finally {
         vi.unstubAllGlobals();
       }
@@ -445,7 +478,6 @@ describe('Router', () => {
       return [
         {
           path: '/',
-          index: 0,
           params: {},
           route: {
             path: '/',
@@ -456,7 +488,6 @@ describe('Router', () => {
         },
         {
           path: '/page',
-          index: 1,
           params: {},
           route: {
             path: '/page',
@@ -467,7 +498,6 @@ describe('Router', () => {
         },
         {
           path: '/page/child',
-          index: 2,
           params: {},
           route: {
             path: '/page/child',
@@ -480,7 +510,7 @@ describe('Router', () => {
 
     const resolveCtx = {
       router: createMockRouter(),
-      location: {pathname: '/page/child'}
+      location: {pathname: '/page/child', search: '', hash: ''}
     };
 
     it('should render the failing level errorComponent while the parent layout stays', async () => {
@@ -502,7 +532,6 @@ describe('Router', () => {
       const matched: Matched<Route>[] = [
         {
           path: '/lazy',
-          index: 0,
           params: {},
           route: {
             path: '/lazy',
@@ -582,13 +611,11 @@ describe('Router', () => {
       const matched: Matched<Route>[] = [
         {
           path: '/users/:id',
-          index: 0,
           params: {id: '7'},
           route: {path: '/users/:id', name: 'users', component: () => Users}
         },
         {
           path: '/posts/:postId',
-          index: 1,
           params: {postId: '9'},
           route: {path: '/posts/:postId', component: () => Post}
         }
@@ -617,13 +644,11 @@ describe('Router', () => {
       const matched: Matched<Route>[] = [
         {
           path: '/:id',
-          index: 0,
           params: {id: 'shallow'},
           route: {path: '/:id', component: () => Parent}
         },
         {
           path: '/:id/deep',
-          index: 1,
           params: {id: 'deep'},
           route: {path: '/:id/deep', component: () => Child}
         }
@@ -633,5 +658,175 @@ describe('Router', () => {
       expect(container.textContent).toContain('parent:shallow');
       expect(container.textContent).toContain('child:deep');
     });
+  });
+});
+
+describe('Link navigation guard', () => {
+  type ClickInit = {
+    button?: number;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+    altKey?: boolean;
+  };
+
+  function renderLink(props: LinkProps = {to: '/test'}) {
+    render(
+      <Router router={createMockRouter()}>
+        <Link {...props}>Go</Link>
+      </Router>
+    );
+    return screen.getByText('Go');
+  }
+
+  // fireEvent returns the value of dispatchEvent, which is `false` once
+  // preventDefault is called. So `true` proves the browser default behavior
+  // was left untouched by the guard.
+  function expectBrowserDefault(el: Element, init?: ClickInit) {
+    expect(fireEvent.click(el, init)).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The real navigate() returns a promise; the module mock returns undefined.
+    vi.mocked(navigate).mockReset().mockResolvedValue(undefined);
+  });
+
+  it('should let ctrl+click open in a new tab', () => {
+    expectBrowserDefault(renderLink(), {ctrlKey: true});
+  });
+
+  it('should let meta+click open in a new tab', () => {
+    expectBrowserDefault(renderLink(), {metaKey: true});
+  });
+
+  it('should let shift+click open in a new window', () => {
+    expectBrowserDefault(renderLink(), {shiftKey: true});
+  });
+
+  it('should let alt+click download the target', () => {
+    expectBrowserDefault(renderLink(), {altKey: true});
+  });
+
+  it('should let middle clicks (button=1) open a new tab', () => {
+    expectBrowserDefault(renderLink(), {button: 1});
+  });
+
+  it('should not intercept links targeting another browsing context', () => {
+    expectBrowserDefault(renderLink({to: '/test', target: '_blank'}));
+  });
+
+  it('should not intercept links marked rel="external"', () => {
+    expectBrowserDefault(renderLink({to: '/test', rel: 'external'}));
+  });
+
+  it('should navigate on a plain left click', () => {
+    const el = renderLink();
+    // preventDefault is called for in-app navigation.
+    expect(fireEvent.click(el)).toBe(false);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(expect.anything(), '/test');
+  });
+
+  it('should release the click lock after navigate rejects', async () => {
+    vi.mocked(navigate).mockRejectedValueOnce(new Error('navigate boom'));
+    const el = renderLink();
+
+    await act(async () => {
+      fireEvent.click(el);
+    });
+    expect(navigate).toHaveBeenCalledTimes(1);
+
+    // The rejection is swallowed (no unhandled rejection) and the lock is
+    // released, so a second click navigates again.
+    await act(async () => {
+      fireEvent.click(el);
+    });
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Route path param types', () => {
+  it('should type ctx.params of a required param path', () => {
+    const route: Route<'/users/:id'> = {
+      path: '/users/:id',
+      data: ({params}) => {
+        expectTypeOf(params).toEqualTypeOf<{id: string}>();
+        expectTypeOf(params.id).toEqualTypeOf<string>();
+        return params.id;
+      }
+    };
+    expect(route.path).toBe('/users/:id');
+  });
+
+  it('should type ctx.params of an optional param path', () => {
+    const route: Route<'/list/:page?'> = {
+      path: '/list/:page?',
+      data: ({params}) => {
+        expectTypeOf(params).toEqualTypeOf<{page?: string}>();
+        return params.page ?? '1';
+      }
+    };
+    expect(route.path).toBe('/list/:page?');
+  });
+
+  it('should carry no concrete keys for a static path', () => {
+    const route: Route<'/about'> = {
+      path: '/about',
+      component: ({params}) => {
+        expectTypeOf(params).toEqualTypeOf<{}>();
+        return () => null;
+      }
+    };
+    expect(route.path).toBe('/about');
+  });
+
+  it('should stay compatible with non-generic Route usage', () => {
+    const routes: Route[] = [
+      {
+        path: '/users/:id',
+        data: ({params}) => String(params.id),
+        children: [
+          {path: '/users/:id/posts/:postId', data: ({params}) => params}
+        ]
+      }
+    ];
+    // A path-typed route stays assignable to the plain Route type...
+    const typed: Route<'/users/:id'> = {
+      path: '/users/:id',
+      data: ({params}) => {
+        expectTypeOf(params).toEqualTypeOf<{id: string}>();
+        return params.id;
+      }
+    };
+    routes.push(typed);
+    // A plain Route keeps the legacy Record<string, string> params.
+    const legacy: Route = {
+      path: '/anything',
+      data: ({params}) => {
+        expectTypeOf(params).toEqualTypeOf<Record<string, string>>();
+        return params.id;
+      }
+    };
+    routes.push(legacy);
+    expect(routes).toHaveLength(3);
+  });
+
+  it('should type component and errorComponent contexts too', () => {
+    const route: Route<'/posts/:postId'> = {
+      path: '/posts/:postId',
+      component: ({params}) => {
+        expectTypeOf(params).toEqualTypeOf<{postId: string}>();
+        return () => null;
+      },
+      // errorComponent props are strictly contravariant, so its ctx keeps
+      // the untyped params shape.
+      errorComponent: ({ctx}) => {
+        expectTypeOf(ctx.params).toEqualTypeOf<Record<string, string>>();
+        return null;
+      }
+    };
+    expect(route.path).toBe('/posts/:postId');
   });
 });

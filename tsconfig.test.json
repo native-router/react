@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "rootDir": "."
+  },
+  "include": ["src", "test", "vitest.config.ts", "vite.config.ts"],
+  "exclude": [
+    // Legacy mocha-style files, not collected by vitest nor run by CI.
+    "test/index.tsx",
+    "test/util.ts"
+  ]
+}

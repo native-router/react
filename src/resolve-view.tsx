@@ -1,6 +1,11 @@
 import type {ComponentType, ReactElement} from 'react';
 import type {Context, ResolveViewContext, Route} from '@@/types';
-import type {Matched, mergeMatchedParams} from '@native-router/core';
+import {
+  mergeMatchedParams,
+  parseSearch,
+  parseSearchInput
+} from '@native-router/core';
+import type {Matched} from '@native-router/core';
 import {DataProvider, MatchedContext, View, ViewProvider} from './context';
 
 /**
@@ -53,12 +58,16 @@ function resolveViewBase(
 ) {
   return Promise.all(
     matched.map(({route}, index) => {
-      const ctx = {
+      // `search` starts as the degraded input and is upgraded to the
+      // schema output before the data fetcher runs below; schema outputs
+      // are user-typed(`Route<P, S>`), so the property stays `any` here.
+      const ctx: Context<Route, Record<string, string>, any> = {
         matched: matched!,
         params: mergeMatchedParams(matched, index),
         index,
         router,
-        location
+        location,
+        search: parseSearchInput(location.search)
       };
       function resolveComponent(): ComponentType | Promise<ComponentType> {
         if (!route.component) return View;
@@ -66,13 +75,21 @@ function resolveViewBase(
         return Promise.resolve(r).then((m) => ('default' in m ? m.default : m));
       }
 
-      // A level that fails to resolve (data or component) is replaced by its
-      // route-level errorComponent when configured; otherwise the error
-      // bubbles up to the global errorHandler as before.
-      return Promise.all([
-        resolveData(route.data, ctx),
-        resolveComponent()
-      ]).then(
+      // The level's search schema runs before its data fetcher: the parsed
+      // output replaces the degraded input in `ctx.search`, and a rejected
+      // validation fails the level exactly like a data error.
+      const resolveDataWithSearch = () =>
+        route.search
+          ? parseSearch(route.search, location.search).then((search) => {
+              ctx.search = search;
+              return resolveData(route.data, ctx);
+            })
+          : resolveData(route.data, ctx);
+
+      // A level that fails to resolve (search, data or component) is
+      // replaced by its route-level errorComponent when configured;
+      // otherwise the error bubbles up to the global errorHandler as before.
+      return Promise.all([resolveDataWithSearch(), resolveComponent()]).then(
         ([data, C]) => (
           <DataProvider data={data} name={route.name}>
             <MatchedContext.Provider value={ctx}>

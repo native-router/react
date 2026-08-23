@@ -1,5 +1,6 @@
-import {commit, createHref, resolve, toLocation} from '@native-router/core';
-import type {LinkProps} from '@@/types';
+import {commit, createHref, preload} from '@native-router/core';
+import type {ResolvedEntry} from '@native-router/core';
+import type {LinkProps, Route} from '@@/types';
 import {
   createContext,
   MouseEvent,
@@ -11,6 +12,7 @@ import {
   useState
 } from 'react';
 import {useRouter} from './Router';
+import {shouldNavigate} from './link-behavior';
 
 type PrefetchLinkContext = {loading: boolean; error?: Error; view?: ReactNode};
 
@@ -44,24 +46,32 @@ export default function PrefetchLink({
 }: LinkProps) {
   const router = useRouter();
   const anchorRef = useRef<HTMLAnchorElement>(null);
-  const viewPromiseRef = useRef<Promise<ReactNode> | undefined>(undefined);
+  const entryRef = useRef<Promise<ResolvedEntry<ReactNode>> | undefined>(
+    undefined
+  );
   const failedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
   const [view, setView] = useState<ReactNode>();
-  const location = toLocation(router, to);
 
-  function prefetchIt(): Promise<ReactNode> {
+  function prefetchIt(): Promise<ResolvedEntry<ReactNode>> {
     setLoading(true);
     setError(undefined);
     failedRef.current = false;
-    const task = resolve(router, location);
-    viewPromiseRef.current = task;
-    // The derived chain carries the loading/error/view state and handles the
-    // rejection of `task`, so a prefetched task that is never committed does
-    // not surface as a global unhandledrejection. Failure is tracked in
-    // `failedRef` instead of relying on the rejected task itself.
-    task
+    // Route guards(redirect/beforeLoad) run before the view resolves; the
+    // stored entry carries the terminal location, so prefetch, preview and
+    // commit all agree on the final target. preload() caches the entry at
+    // the router level(keyed by pathname+search, TTL bounded), so repeated
+    // prefetches of the same target share one resolution and the entry is
+    // evicted once committed.
+    const entryPromise = preload<Route, ReactNode>(router, to);
+    entryRef.current = entryPromise;
+    // The derived chain carries the loading/error/view state and handles
+    // the rejection of the entry task, so a prefetched task that is never
+    // committed does not surface as a global unhandledrejection. Failure is
+    // tracked in `failedRef` instead of relying on the rejected task itself.
+    entryPromise
+      .then((entry) => entry.task)
       .then(
         (v) => setView(v),
         (e) => {
@@ -70,26 +80,29 @@ export default function PrefetchLink({
         }
       )
       .finally(() => setLoading(false));
-    return task;
+    return entryPromise;
   }
 
   function handlePrefetch() {
-    if (viewPromiseRef.current) return;
+    if (entryRef.current) return;
     prefetchIt();
   }
 
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
+    // Modified clicks, other buttons and links to another browsing context
+    // keep the browser default behavior (open in new tab/window, etc).
+    if (!shouldNavigate(e, rest.target, rest.rel)) return;
     e.preventDefault();
-    // A stored task that already failed can never be committed
+    // A stored entry that already failed can never be committed
     // successfully, so resolve the target again before committing.
-    const task =
-      !viewPromiseRef.current || failedRef.current
-        ? prefetchIt()
-        : viewPromiseRef.current;
-    commit(router, task, location)
+    const stored = entryRef.current;
+    const entryPromise = !stored || failedRef.current ? prefetchIt() : stored;
+    // The terminal location of the entry is committed, not the link target.
+    entryPromise
+      .then((entry) => commit(router, entry.task, entry.location))
       .catch(() => undefined)
       .finally(() => {
-        viewPromiseRef.current = undefined;
+        entryRef.current = undefined;
         failedRef.current = false;
       });
   }
@@ -97,7 +110,7 @@ export default function PrefetchLink({
   // Reset every piece of prefetch state when the target changes, so a stale
   // error or preview from the previous target is not rendered for the new one.
   useEffect(() => {
-    viewPromiseRef.current = undefined;
+    entryRef.current = undefined;
     failedRef.current = false;
     setLoading(false);
     setError(undefined);

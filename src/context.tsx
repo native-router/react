@@ -31,10 +31,16 @@ function useDataContext() {
 }
 
 /**
+ * Get the named data map of the resolved route levels: an object keyed by
+ * each ancestor's `name`, holding its resolved `data`. The current level
+ * is included only when it declares a `name`.
+ *
+ * Give the generic the expected map shape to read values type-safely:
+ * `useNamedData<{user: User}>()`.
  * @group Hooks
  */
-export function useNamedData() {
-  return useDataContext()[1];
+export function useNamedData<T = Record<string, unknown>>() {
+  return useDataContext()[1] as T;
 }
 
 export function DataProvider({
@@ -66,11 +72,16 @@ export function useMatched() {
 }
 
 /**
+ * Get the resolved `data` of the current route level, or the named data
+ * of an ancestor level when `name` is given.
+ *
+ * Give the generic the expected data type to read it type-safely without
+ * a cast: `useData<Article>()` → `Article | undefined`.
  * @group Hooks
  */
-export function useData(name?: string) {
+export function useData<T = unknown>(name?: string): T | undefined {
   const [data, namedData] = useDataContext();
-  return name ? namedData[name] : data;
+  return (name ? namedData[name] : data) as T | undefined;
 }
 
 export const LoadingContext = createContext<LoadStatus | undefined>(undefined);

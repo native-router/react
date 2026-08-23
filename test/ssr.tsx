@@ -76,7 +76,7 @@ describe('SSR', () => {
 });
 
 function Test() {
-  const data = useData();
+  const data = useData<string>();
   return (
     <div>
       test <span>{data}</span>

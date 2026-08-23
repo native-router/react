@@ -1,10 +1,13 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import * as path from 'path';
+import {fileURLToPath} from 'url';
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
 import linaria from '@linaria/vite';
 import type {Plugin} from 'vite';
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const buildDemo = process.env.BUILD_DEMO === 'true';
 const isSSR = process.env.SSR === 'true';
@@ -16,19 +19,19 @@ export default defineConfig({
     alias: [
       {
         find: '@native-router/react/server',
-        replacement: `${path.join(__dirname, 'src/server.tsx')}`
+        replacement: `${path.join(dirname, 'src/server.tsx')}`
       },
       {
         find: '@native-router/react',
-        replacement: `${path.join(__dirname, 'src/index.tsx')}`
+        replacement: `${path.join(dirname, 'src/index.tsx')}`
       },
       {
         find: /^@\/(.*)/,
-        replacement: `${path.join(__dirname, 'demos/$1')}`
+        replacement: `${path.join(dirname, 'demos/$1')}`
       },
       {
         find: /^@@\/(.*)/,
-        replacement: `${path.join(__dirname, 'src/$1')}`
+        replacement: `${path.join(dirname, 'src/$1')}`
       }
     ]
   },
@@ -57,7 +60,7 @@ export default defineConfig({
             !(
               id.startsWith('.') ||
               id.startsWith('@@/') ||
-              id.startsWith(`${__dirname}/src`)
+              id.startsWith(`${dirname}/src`)
             )
         }
       },
@@ -70,11 +73,10 @@ export default defineConfig({
       exclude: ['node_modules/**']
     }),
     react({
-      exclude: ['node_modules/**'],
-      babel: {
-        configFile: true,
-        babelrc: true
-      }
+      exclude: ['node_modules/**']
+      // plugin-react 6 is oxc-based: the old `babel` option is gone. The
+      // demo-only babel plugins(jsx-class/jsx-condition) no longer run
+      // through this plugin under vite 8.
     }),
     isSSR && ssr()
   ]

@@ -20,4 +20,5 @@ jobs:
           cache: pnpm
       - run: pnpm install
       - run: pnpm lint
+      - run: npm run typecheck
       - run: pnpm test:run
