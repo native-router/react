@@ -87,14 +87,27 @@ function useNewRouter(
 ) {
   const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
   const {baseUrl, currentView} = tracked;
+  const [loading, setLoading] = useState<LoadStatus>();
+  // Initial options are baked in at creation: the cold-start resolve fires
+  // from the subscribe effect(children effects run first) before the
+  // setOptions effect below runs, and the default errorHandler would let
+  // listen's refresh().catch(noop) swallow a first failure, leaving the
+  // view blank forever.
   const router = useMemo(
-    () => createRouter(routes, createHistory(), tracked),
+    () =>
+      createRouter(routes, createHistory(), {
+        ...options,
+        onLoadingChange(status) {
+          setLoading(status && {key: uniqId(), status});
+        }
+      }),
+    // Only the tracked options belong to the deps: option updates flow
+    // through the setOptions effect below instead of recreating the router.
     [routes, createHistory, baseUrl, currentView]
   );
 
-  const [loading, setLoading] = useState<LoadStatus>();
-  // Options are applied in an effect(never during render) and refreshed on
-  // every commit, so `onLoadingChange` always sees the latest closure.
+  // Options are refreshed on every commit, so `onLoadingChange` and the
+  // callback options always see the latest closure.
   useEffect(() => {
     setOptions(router, {
       ...rest,

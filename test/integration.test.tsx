@@ -25,6 +25,7 @@ import {
 import type {Location, StandardSchemaV1} from '@native-router/core';
 import {
   Link,
+  MemoryRouter,
   NavLink,
   PrefetchLink,
   Router,
@@ -307,6 +308,28 @@ describe('Integration(real core, real history)', () => {
     await flush();
     expect(data).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('alert').textContent).toBe('ErrorView:boom');
+  });
+
+  // Cold start: the first resolve fires from the subscribe effect(children
+  // first), before the parent Router component's setOptions effect runs.
+  // Options passed as props(errorHandler here) must already be in effect by
+  // then, or the failure is swallowed by listen's refresh().catch(noop) and
+  // the view stays blank forever.
+  it('should apply the prop errorHandler to the cold-start resolve', async () => {
+    const data = vi.fn(() => Promise.reject(new Error('cold-boom')));
+    const routes: Route[] = [{path: '/err', component: () => Page, data}];
+    render(
+      <MemoryRouter
+        initialEntries={['/err']}
+        routes={routes}
+        errorHandler={(e) => <div role="alert">ErrorView:{e.message}</div>}
+      >
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(data).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('alert').textContent).toBe('ErrorView:cold-boom');
   });
 
   describe('route guards integration', () => {
