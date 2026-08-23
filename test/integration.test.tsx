@@ -45,7 +45,6 @@ import type {Route} from '../src/types';
 async function flush(ticks = 20) {
   await act(async () => {
     for (let i = 0; i < ticks; i += 1) {
-      // eslint-disable-next-line no-await-in-loop -- sequential microtask ticks ARE the deterministic flush mechanism
       await Promise.resolve();
     }
   });

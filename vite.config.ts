@@ -1,5 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
 import * as path from 'path';
 import {fileURLToPath} from 'url';
 import {defineConfig} from 'vite';

@@ -12,7 +12,7 @@
  * @param rel The anchor's `rel` attribute, if any.
  * @group Components
  */
-// eslint-disable-next-line import/prefer-default-export -- named utility imported by Link/PrefetchLink
+
 export function shouldNavigate(
   e: {
     button: number;

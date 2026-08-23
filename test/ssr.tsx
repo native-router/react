@@ -9,7 +9,6 @@ describe('SSR', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     window.history.replaceState(null, '', '/');
-    // eslint-disable-next-line no-underscore-dangle
     delete (window as any)._nativeRouterReactSSRData;
     document.body.innerHTML = '';
   });
@@ -19,7 +18,6 @@ describe('SSR', () => {
     const view = await resolveServerView(route, '/');
     const html = ReactDOMServer.renderToString(view);
     document.body.innerHTML = `<div id="root">${html}</div>`;
-    // eslint-disable-next-line no-eval
     eval(document.body.querySelector('script')!.innerHTML);
 
     const errorSpy = vi.spyOn(console, 'error');
@@ -47,9 +45,7 @@ describe('SSR', () => {
     expect(script.innerHTML).not.toContain('</script>');
 
     // The escaped payload is still valid JavaScript and keeps the data intact.
-    // eslint-disable-next-line no-eval
     eval(script.innerHTML);
-    // eslint-disable-next-line no-underscore-dangle
     expect((window as any)._nativeRouterReactSSRData.data[0]).toBe(injection);
   });
 
@@ -61,7 +57,6 @@ describe('SSR', () => {
     const view = await resolveServerView(routes, '/');
     const html = ReactDOMServer.renderToString(view);
     document.body.innerHTML = `<div id="root">${html}</div>`;
-    // eslint-disable-next-line no-eval
     eval(document.body.querySelector('script')!.innerHTML);
 
     const {view: clientView, router} = await hydrate(routes);

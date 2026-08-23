@@ -11,7 +11,7 @@ import {shouldNavigate} from './link-behavior';
  */
 export default function Link({to, ...rest}: LinkProps) {
   const router = useRouter();
-  const lock = useRef(false);
+  const lockRef = useRef(false);
 
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
     // Modified clicks, other buttons and links to another browsing context
@@ -19,12 +19,12 @@ export default function Link({to, ...rest}: LinkProps) {
     if (!shouldNavigate(e, rest.target, rest.rel)) return;
     e.preventDefault();
 
-    if (lock.current) return;
-    lock.current = true;
+    if (lockRef.current) return;
+    lockRef.current = true;
     navigate(router, to)
       .catch(() => undefined)
       .finally(() => {
-        lock.current = false;
+        lockRef.current = false;
       });
   }
   return (

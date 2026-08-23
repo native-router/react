@@ -15,7 +15,6 @@ import type {
 } from '@native-router/core';
 
 export type ResolveViewContext<R extends BaseRoute> = {
-  // eslint-disable-next-line no-use-before-define
   router: RouterInstance<R>;
   location: Location;
 };

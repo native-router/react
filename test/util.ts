@@ -1,7 +1,7 @@
 import sinon from 'sinon';
 
 // https://github.com/testing-library/react-testing-library/issues/1197
-// eslint-disable-next-line import/prefer-default-export
+// eslint-disable-next-line import-x/prefer-default-export
 export function useFakeTimers(...args: Parameters<typeof sinon.useFakeTimers>) {
   const sinonClock = sinon.useFakeTimers.call(sinon, ...args);
 

@@ -360,6 +360,7 @@ describe('Router', () => {
 
   describe('Router component', () => {
     it('should render the current view directly when children is omitted', () => {
+      // eslint-disable-next-line @eslint-react/no-missing-key -- single-element mock array, not a rendered list
       render(<Router router={createMockRouter([<b>direct view</b>])} />);
       expect(screen.getByText('direct view')).toBeDefined();
     });
@@ -775,6 +776,7 @@ describe('Route path param types', () => {
     const route: Route<'/about'> = {
       path: '/about',
       component: ({params}) => {
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- asserts the params type carries no keys
         expectTypeOf(params).toEqualTypeOf<{}>();
         return () => null;
       }
