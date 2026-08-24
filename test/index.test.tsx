@@ -761,12 +761,15 @@ describe('Route path param types', () => {
     expect(route.path).toBe('/users/:id');
   });
 
-  it('should type ctx.params of an optional param path', () => {
+  it('should contribute no params for v6-era optional suffix syntax', () => {
+    // core@1.5 locks path-to-regexp 8.4.2, whose matcher rejects `:page?`
+    // at runtime; the types deliberately model no params for it either.
     const route: Route<'/list/:page?'> = {
       path: '/list/:page?',
       data: ({params}) => {
-        expectTypeOf(params).toEqualTypeOf<{page?: string}>();
-        return params.page ?? '1';
+        // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- v6 suffixes contribute nothing
+        expectTypeOf(params).toEqualTypeOf<{}>();
+        return '1';
       }
     };
     expect(route.path).toBe('/list/:page?');
