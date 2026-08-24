@@ -1048,3 +1048,209 @@ describe('search schema', () => {
     expect(screen.getByTestId('article').textContent).toBe('42');
   });
 });
+
+describe('route pendingComponent', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return {promise, resolve};
+  }
+
+  function Skeleton() {
+    return <div data-testid="skeleton">loading…</div>;
+  }
+
+  function ParentSkeleton() {
+    return <div data-testid="parent-skeleton">parent loading…</div>;
+  }
+
+  it('should render the pendingComponent during a slow cold start', async () => {
+    const gate = deferred<string>();
+    const routes: Route[] = [
+      {
+        path: '/slow',
+        component: () => Page,
+        data: () => gate.promise,
+        pendingComponent: Skeleton
+      }
+    ];
+    render(
+      <MemoryRouter initialEntries={['/slow']} routes={routes}>
+        <View />
+      </MemoryRouter>
+    );
+    // render()'s act already flushed the subscribe effect: the cold-start
+    // resolve is pending and there is no previous view to retain.
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+    expect(screen.queryByText('Page')).toBeNull();
+
+    await act(async () => {
+      gate.resolve('slow-data');
+    });
+    await flush();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(screen.getByText('slow-data')).toBeDefined();
+  });
+
+  it('should keep the previous view on in-app pagination (no pending flash)', async () => {
+    const gates = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const data = vi.fn(() => gates[call++].promise);
+    const routes: Route[] = [
+      {
+        path: '/list',
+        component: () => Page,
+        data,
+        pendingComponent: Skeleton
+      }
+    ];
+    render(
+      <MemoryRouter initialEntries={['/list?page=1']} routes={routes}>
+        <View />
+        <SearchControls />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+    await act(async () => {
+      gates[0].resolve('page-1-data');
+    });
+    await flush();
+    expect(screen.getByText('page-1-data')).toBeDefined();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('next-page'));
+    });
+    // The re-resolve of /list?page=2 is pending, but the old view is
+    // retained: the skeleton must not flash over it.
+    expect(data).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('page-1-data')).toBeDefined();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+
+    await act(async () => {
+      gates[1].resolve('page-2-data');
+    });
+    await flush();
+    expect(screen.getByText('page-2-data')).toBeDefined();
+  });
+
+  it('should prefer the resolving route own pendingComponent over an ancestor one', async () => {
+    const gate = deferred<string>();
+    function Layout() {
+      return (
+        <div>
+          <h1>Layout</h1>
+          <View />
+        </div>
+      );
+    }
+    const routes: Route[] = [
+      {
+        component: () => Layout,
+        pendingComponent: ParentSkeleton,
+        children: [
+          {
+            path: '/deep',
+            component: () => Page,
+            data: () => gate.promise,
+            pendingComponent: Skeleton
+          }
+        ]
+      }
+    ];
+    render(
+      <MemoryRouter initialEntries={['/deep']} routes={routes}>
+        <View />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+    expect(screen.queryByTestId('parent-skeleton')).toBeNull();
+
+    await act(async () => {
+      gate.resolve('deep-data');
+    });
+    await flush();
+    expect(screen.getByText('Layout')).toBeDefined();
+    expect(screen.getByText('deep-data')).toBeDefined();
+  });
+
+  it('should fall back to the nearest ancestor without a pendingComponent of its own', async () => {
+    const gate = deferred<string>();
+    function Layout() {
+      return (
+        <div>
+          <h1>Layout</h1>
+          <View />
+        </div>
+      );
+    }
+    const routes: Route[] = [
+      {
+        component: () => Layout,
+        pendingComponent: ParentSkeleton,
+        children: [
+          {
+            path: '/deep',
+            component: () => Page,
+            data: () => gate.promise
+          }
+        ]
+      }
+    ];
+    render(
+      <MemoryRouter initialEntries={['/deep']} routes={routes}>
+        <View />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('parent-skeleton')).toBeDefined();
+
+    await act(async () => {
+      gate.resolve('deep-data');
+    });
+    await flush();
+    expect(screen.queryByTestId('parent-skeleton')).toBeNull();
+    expect(screen.getByText('deep-data')).toBeDefined();
+  });
+
+  it('should show the skeleton again when re-navigating after a failed cold start', async () => {
+    const gate = deferred<string>();
+    const routes: Route[] = [
+      {
+        path: '/err',
+        component: () => Page,
+        data: () => Promise.reject(new Error('boom'))
+      },
+      {
+        path: '/slow',
+        component: () => Page,
+        data: () => gate.promise,
+        pendingComponent: Skeleton
+      }
+    ];
+    render(
+      <MemoryRouter initialEntries={['/err']} routes={routes}>
+        <View />
+        <Link to="/slow">GoSlow</Link>
+      </MemoryRouter>
+    );
+    await flush();
+    // The failed cold start left no view(and no errorHandler view either).
+    expect(screen.queryByText('Page')).toBeNull();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoSlow'));
+    });
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+
+    await act(async () => {
+      gate.resolve('slow-data');
+    });
+    await flush();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+    expect(screen.getByText('slow-data')).toBeDefined();
+  });
+});

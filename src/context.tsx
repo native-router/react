@@ -16,12 +16,24 @@ export function useView() {
 }
 
 /**
+ * Route-level pending skeleton(`pendingComponent` of the nearest matched
+ * ancestor), set by the Router only while a navigation is pending with no
+ * previous view to retain(cold start, refresh, re-navigation after an
+ * error); `null` otherwise, so in-app navigation keeps the previous view.
+ * @see {@link Route.pendingComponent}
+ */
+export const PendingContext = createContext<ReactNode>(null);
+
+/**
  * Used for route component to render child route component.
- * It just render the return of {@link useView}
+ * It just render the return of {@link useView}, falling back to the
+ * route-level pending skeleton when the view slot is empty.
  * @group Components
  */
 export function View() {
-  return useView();
+  const view = useView();
+  const pending = useContext(PendingContext);
+  return view ?? pending;
 }
 
 const DataContext = createContext<[any, Record<string, any>]>([undefined, {}]);

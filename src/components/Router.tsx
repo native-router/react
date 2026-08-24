@@ -16,8 +16,14 @@ import {
   MemoryHistoryOptions
 } from 'history';
 import type {LoadStatus, Route} from '@@/types';
-import {LoadingContext, ViewProvider} from '@@/context';
-import {create, getCurrentView, listen, setOptions} from '@native-router/core';
+import {LoadingContext, PendingContext, ViewProvider} from '@@/context';
+import {
+  create,
+  getCurrentView,
+  listen,
+  match,
+  setOptions
+} from '@native-router/core';
 import type {Options, ResolveView, RouterInstance} from '@native-router/core';
 import {splitProps, uniqId} from '@native-router/core/util';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
@@ -58,16 +64,52 @@ export function Router({
   // Router is rendered inside server-rendered content(e.g. resolveServerView).
   const getServerSnapshot = useCallback(() => getCurrentView(router), [router]);
   const view = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // Route-level pending skeleton, only when no previous view is retained
+  // (cold start, refresh, re-navigation after an error); in-app navigation
+  // keeps the old view by design, the global loading signal already
+  // covers that phase. Reading LoadingContext here also re-renders the
+  // Router on every loading transition.
+  const loading = useContext(LoadingContext);
+  const pending =
+    view == null && loading?.status === 'pending'
+      ? resolvePendingView(router, loading.key)
+      : null;
 
   return (
     <RouterContext.Provider value={router}>
       {children === undefined ? (
-        view
+        (view ?? pending)
       ) : (
-        <ViewProvider value={view}>{children}</ViewProvider>
+        <ViewProvider value={view}>
+          <PendingContext.Provider value={pending}>
+            {children}
+          </PendingContext.Provider>
+        </ViewProvider>
       )}
     </RouterContext.Provider>
   );
+}
+
+/**
+ * Render the `pendingComponent` of the nearest matched ancestor of the
+ * resolving location, walked deepest first(the resolving route's own
+ * included). Keyed by the loading episode so a new pending phase remounts
+ * the skeleton(stateful shimmer animations restart). Guards may still
+ * redirect the resolution away; until then the initially matched chain
+ * is the best — and only — answer available.
+ */
+function resolvePendingView(
+  router: RouterInstance<Route, ReactNode>,
+  key: number
+) {
+  const {resolving} = router;
+  const matched = resolving ? match(router, resolving.pathname) : undefined;
+  if (!matched) return null;
+  for (let i = matched.length - 1; i >= 0; i--) {
+    const Pending = matched[i].route.pendingComponent;
+    if (Pending) return <Pending key={key} />;
+  }
+  return null;
 }
 
 export function createRouter(

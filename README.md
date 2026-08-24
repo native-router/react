@@ -78,6 +78,7 @@ function Preview({visible}: {visible: boolean}) {
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
 - Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`
 - Two error layers: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}`
+- Route-level `pendingComponent` skeleton, shown only when no previous view can be retained (cold start, refresh, re-navigation after an error); the nearest matched ancestor's wins, and in-app navigation keeps the previous view instead
 - SSR: `resolveServerView` (from `@native-router/react/server`) renders the view plus an inline data payload; `hydrate` reuses that payload on the client with zero refetch
 - Tree-shakable: `sideEffects: false` — unused components and hooks drop out of the bundle
 
@@ -128,7 +129,9 @@ const routes = {
     {
       path: '/users',
       component: () => import('./UserList'),
-      data: userService.fetchList
+      data: userService.fetchList,
+      // cold-start/refresh skeleton; in-app navigation keeps the old view
+      pendingComponent: () => <UserListSkeleton />
     },
     {
       path: '/users/:id',

@@ -82,6 +82,18 @@ export type Route<P extends string = string, S = any> = Omit<
      * `Route<'/a/:id'>` and plain `Route`.
      */
     errorComponent?: ComponentType<{error: Error; ctx: Context<Route>}>;
+    /**
+     * Skeleton rendered while a navigation is pending AND there is no
+     * previous view to retain — cold start, refresh, or re-navigation
+     * after an error left the view slot blank. The nearest one up the
+     * matched chain(deepest first, the route's own included) wins.
+     *
+     * In-app navigation never renders it: the previous view stays on
+     * screen until the new one resolves(the view stack design), the
+     * global loading signal(`useLoading`) already covers that phase.
+     * Receives no props.
+     */
+    pendingComponent?: ComponentType;
   }>,
   'path' | 'children'
 > & {

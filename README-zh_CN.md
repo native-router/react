@@ -78,6 +78,7 @@ function Preview({visible}: {visible: boolean}) {
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
 - Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`
 - 两层错误处理：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）
+- 路由级 `pendingComponent` 骨架屏：仅当没有可保留的旧视图时（冷启动、刷新、错误后的重新导航）渲染，取匹配链上最近祖先的；应用内导航依旧保留旧视图，不会闪骨架屏
 - SSR：`resolveServerView`（来自 `@native-router/react/server`）渲染视图并内联数据载荷；客户端 `hydrate` 复用载荷，零重复请求
 - Tree-Shaking 友好：`sideEffects: false`，未用到的组件与 hooks 会被摇掉
 
@@ -128,7 +129,9 @@ const routes = {
     {
       path: '/users',
       component: () => import('./UserList'),
-      data: userService.fetchList
+      data: userService.fetchList,
+      // 冷启动/刷新时的骨架屏；应用内导航保留旧视图，不会渲染它
+      pendingComponent: () => <UserListSkeleton />
     },
     {
       path: '/users/:id',
