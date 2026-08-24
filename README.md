@@ -70,7 +70,7 @@ function Preview({visible}: {visible: boolean}) {
 
 - Three history modes out of the box: `HistoryRouter`, `HashRouter`, `MemoryRouter` (tests, widgets); `Router` renders with an externally created instance, `createRouter` builds one for a custom history
 - Route guards: static `redirect` and async `beforeLoad` on every route level, run shallow → deep; more than 10 chained redirects reject with `RedirectLoopError`
-- Cancelable async navigation: starting a new navigation supersedes the in-flight one; `cancel(router)` aborts it; a history POP cancels it too
+- Cancelable async navigation: starting a new navigation supersedes the in-flight one; `cancel(router)` aborts it; a history POP cancels it too — and the chain's `AbortSignal` reaches every `data` loader as `ctx.signal` (`fetch(url, {signal: ctx.signal})`), so superseded navigations stop their requests instead of only having results dropped
 - `NavLink` with `isActive`/`isExactActive`, `end`, `caseSensitive` and `aria-current` (defaults to `"page"`); `className`/`style`/`children` accept `({isActive, isExactActive})` callbacks; `to="/"` is active for every path
 - `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — loaders receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
@@ -140,8 +140,10 @@ const routes = {
       async beforeLoad({params}) {
         if (!await canView(+params.id)) return '/login';
       },
-      // data receives {matched, index, router, location, params}
-      data: ({params}) => userService.fetchById(+params.id),
+      // data receives {matched, index, router, location, params, search, signal};
+      // ctx.signal aborts when this navigation is superseded/cancelled
+      data: ({params, signal}) =>
+        userService.fetchById(+params.id, {signal}),
       errorComponent: ({error}) => <p>{error.message}</p>
     },
     {

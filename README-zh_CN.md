@@ -70,7 +70,7 @@ function Preview({visible}: {visible: boolean}) {
 
 - 开箱即用的三种 history 模式：`HistoryRouter`、`HashRouter`、`MemoryRouter`（测试、小组件）；`Router` 接收外部创建的实例渲染，`createRouter` 用自定义 history 构建实例
 - 路由守卫：每层路由支持静态 `redirect` 与异步 `beforeLoad`，按浅层到深层执行；连续重定向超过 10 次以 `RedirectLoopError` 拒绝
-- 可取消的异步导航：发起下一次导航会取代进行中的导航；`cancel(router)` 主动中止；history POP 也会取消
+- 可取消的异步导航：发起下一次导航会取代进行中的导航；`cancel(router)` 主动中止；history POP 也会取消——同时导航链的 `AbortSignal` 以 `ctx.signal` 传入每个 `data` loader（`fetch(url, {signal: ctx.signal})`），被取代的导航真正停止请求而非仅丢弃结果
 - `NavLink`：`isActive`/`isExactActive`、`end`、`caseSensitive` 与 `aria-current`（默认 `"page"`）；`className`/`style`/`children` 支持 `({isActive, isExactActive})` 回调；`to="/"` 对所有路径都是激活态
 - `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——loader 拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
@@ -140,8 +140,10 @@ const routes = {
       async beforeLoad({params}) {
         if (!await canView(+params.id)) return '/login';
       },
-      // data 接收 {matched, index, router, location, params}
-      data: ({params}) => userService.fetchById(+params.id),
+      // data 接收 {matched, index, router, location, params, search, signal}；
+      // 导航被取代/取消时 ctx.signal 会 abort
+      data: ({params, signal}) =>
+        userService.fetchById(+params.id, {signal}),
       errorComponent: ({error}) => <p>{error.message}</p>
     },
     {

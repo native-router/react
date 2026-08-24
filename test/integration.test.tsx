@@ -446,6 +446,80 @@ describe('Integration(real core, real history)', () => {
       expect(router.history.location.pathname).toBe('/b');
       expect(dataB).toHaveBeenCalledTimes(1);
     });
+
+    // The loader chain's AbortSignal bridge: navigate A→B while A's
+    // loader is still pending → A's ctx.signal flips to `aborted` while
+    // B's stays live. A loader passing the signal to fetch(vi.fn spy)
+    // must also see fetch subscribing to it — the wire a real request
+    // would be cancelled through.
+    it('should abort the superseded navigation loader through ctx.signal', async () => {
+      const loaderDone = vi.fn();
+      let releaseA: (() => void) | undefined;
+      const signals: Record<string, AbortSignal> = {};
+      const fetchSpy = vi.fn(
+        (input: string, {signal}: {signal?: AbortSignal}) => {
+          // fetch subscribes to the signal: the observer the native
+          // implementation registers to cancel the request.
+          signal?.addEventListener('abort', loaderDone, {once: true});
+          return new Promise(() => undefined);
+        }
+      );
+      const routes: Route[] = [
+        {path: '/', component: () => Home},
+        {
+          path: '/a',
+          component: () => A,
+          data: (ctx) => {
+            signals.a = ctx.signal;
+            fetchSpy('/api/a', {signal: ctx.signal});
+            return new Promise<undefined>((resolve) => {
+              releaseA = () => resolve(undefined);
+            });
+          }
+        },
+        {
+          path: '/b',
+          component: () => B,
+          data: (ctx) => {
+            signals.b = ctx.signal;
+            return 'b-data';
+          }
+        }
+      ];
+      const router = createRouter(
+        routes,
+        createMemoryHistory({initialEntries: ['/']})
+      );
+      render(
+        <Router router={router}>
+          <View />
+        </Router>
+      );
+      await flush();
+      expect(screen.getByText('Home')).toBeDefined();
+
+      // Navigate to A, then supersede it with B while A's loader is
+      // still parked. The superseding navigate aborts synchronously.
+      await act(async () => {
+        void navigate(router, '/a');
+      });
+      await act(async () => {
+        void navigate(router, '/b');
+      });
+      await flush();
+
+      // A's loader saw its signal aborted; its fetch was wired to the
+      // same signal(the abort listener fired exactly once, for A only).
+      expect(signals.a.aborted).toBe(true);
+      expect(signals.b.aborted).toBe(false);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(loaderDone).toHaveBeenCalledTimes(1);
+
+      // The aborted loader's result is discarded: B rendered, A parked.
+      expect(screen.getByText('B')).toBeDefined();
+      expect(router.history.location.pathname).toBe('/b');
+      releaseA?.();
+    });
   });
 });
 

@@ -17,6 +17,13 @@ import type {
 export type ResolveViewContext<R extends BaseRoute> = {
   router: RouterInstance<R>;
   location: Location;
+  /**
+   * The navigation chain's abort signal, aborted when this navigation is
+   * superseded or cancelled. Optional for custom `resolveView`
+   * implementations: core always passes it, but hand-rolled contexts
+   * (tests, SSR shims) keep compiling without it.
+   */
+  signal?: AbortSignal;
 };
 
 export type Context<
@@ -36,6 +43,14 @@ export type Context<
    * keys).
    */
   search: S;
+  /**
+   * Aborted when this navigation is superseded by a newer one or
+   * cancelled(see {@link RouterInstance.cancelAll cancel}). Forward it to
+   * the loader's requests — `fetch(url, {signal})` or
+   * `useRun({signal: true})` loaders — so a discarded navigation stops
+   * consuming the network instead of only having its result dropped.
+   */
+  signal: AbortSignal;
 };
 
 /**
