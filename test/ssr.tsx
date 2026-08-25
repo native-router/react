@@ -3,7 +3,12 @@ import {hydrate, resolveServerView} from '@@/ssr';
 import {act, render} from '@testing-library/react';
 import ReactDOMServer from 'react-dom/server';
 import {navigate} from '@native-router/core';
-import {Router, useData} from '@native-router/react';
+import {
+  Router,
+  useData,
+  useSearch,
+  useSearchParams
+} from '@native-router/react';
 
 describe('SSR', () => {
   afterEach(() => {
@@ -67,6 +72,30 @@ describe('SSR', () => {
     expect(router.history.createHref('/x')).toBe('/x');
     await act(() => navigate(router, '/other'));
     expect(window.location.pathname).toBe('/other');
+  });
+
+  it('should accept a Location object and server-render search hooks from the server snapshot', async () => {
+    function SearchEcho() {
+      const [params] = useSearchParams();
+      const raw = useSearch();
+      return (
+        <span data-testid="echo">
+          {params.toString()}|{String(raw.a)}
+        </span>
+      );
+    }
+    const routes = [{path: '/', component: () => SearchEcho}];
+    // A Location object (not a string) selects the initial entry.
+    const view = await resolveServerView(routes, {
+      pathname: '/',
+      search: '?a=1',
+      hash: ''
+    });
+    const html = ReactDOMServer.renderToString(view);
+    // On the server both hooks read the empty server snapshot, so the
+    // browser search never leaks into the SSR output(only the hydration
+    // script's serialized payload legitimately mentions it).
+    expect(html).toContain('|<!-- -->undefined</span>');
   });
 });
 

@@ -11,6 +11,8 @@ import {
 import type {Matched, RouterInstance} from '@native-router/core';
 
 import {
+  HashRouter,
+  HistoryRouter,
   Link,
   MemoryRouter,
   PrefetchLink,
@@ -22,12 +24,13 @@ import {
   usePrefetch,
   useRouter
 } from '../src/index';
+import {LoadingContext} from '../src/context';
+import type {LoadStatus, Context, LinkProps, Route} from '../src/types';
 import defaultResolveView, {
   createHydrateResolveView,
   getViewData,
   resolveViewServer
 } from '../src/resolve-view';
-import type {Context, LinkProps, Route} from '../src/types';
 
 const {viewListeners} = vi.hoisted(() => ({
   viewListeners: [] as Array<(view: unknown) => void>
@@ -330,6 +333,15 @@ describe('Router', () => {
         expect(preload).not.toHaveBeenCalled();
 
         const observer = observers[0];
+        // A non-intersecting report must not trigger anything.
+        await act(async () => {
+          observer?.callback(
+            [{isIntersecting: false} as IntersectionObserverEntry],
+            observer as unknown as IntersectionObserver
+          );
+        });
+        expect(preload).not.toHaveBeenCalled();
+
         await act(async () => {
           observer?.callback(
             [{isIntersecting: true} as IntersectionObserverEntry],
@@ -356,6 +368,39 @@ describe('Router', () => {
         vi.unstubAllGlobals();
       }
     });
+
+    it('should stay idle on viewport mode when IntersectionObserver is missing', () => {
+      // jsdom implements no IntersectionObserver and none is stubbed here,
+      // so the viewport effect must bail out instead of throwing.
+      renderLink({to: '/a', prefetch: 'viewport'});
+      expect(screen.getByTestId('status').textContent).toBe('idle');
+      expect(preload).not.toHaveBeenCalled();
+    });
+
+    it('should let modified clicks keep the browser default without committing', () => {
+      renderLink({to: '/a'});
+      expect(
+        fireEvent.click(screen.getByTestId('target'), {ctrlKey: true})
+      ).toBe(true);
+      expect(preload).not.toHaveBeenCalled();
+      expect(commit).not.toHaveBeenCalled();
+    });
+
+    it('should swallow a commit failure and let the next intent prefetch again', async () => {
+      vi.mocked(commit).mockRejectedValueOnce(new Error('commit boom'));
+      renderLink({to: '/a'});
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('target'));
+      });
+      expect(commit).toHaveBeenCalledTimes(1);
+      // The finally block cleared the stored entry, so hover resolves the
+      // target again instead of reusing the failed commit's entry.
+      await act(async () => {
+        fireEvent.mouseEnter(screen.getByTestId('target'));
+      });
+      expect(preload).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText('view')).toBeDefined();
+    });
   });
 
   describe('Router component', () => {
@@ -377,6 +422,19 @@ describe('Router', () => {
         viewListeners[0]('view2');
       });
       expect(screen.getByText('view2')).toBeDefined();
+    });
+
+    it('should render nothing while pending with no resolving match to walk', () => {
+      // A pending cold start whose router exposes no `resolving` location
+      // (and so no matched chain): the pending view resolves to null.
+      const router = createMockRouter([null]);
+      const loading: LoadStatus = {key: 1, status: 'pending'};
+      const {container} = render(
+        <LoadingContext.Provider value={loading}>
+          <Router router={router} />
+        </LoadingContext.Provider>
+      );
+      expect(container.innerHTML).toBe('');
     });
   });
 
@@ -426,6 +484,25 @@ describe('Router', () => {
           <span>child</span>
         </MemoryRouter>
       );
+      expect(create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should create browser-history and hash-history routers', () => {
+      const first = render(
+        <HistoryRouter routes={[]}>
+          <span>history</span>
+        </HistoryRouter>
+      );
+      expect(screen.getByText('history')).toBeDefined();
+      expect(create).toHaveBeenCalledTimes(1);
+
+      first.unmount();
+      render(
+        <HashRouter routes={[]}>
+          <span>hash</span>
+        </HashRouter>
+      );
+      expect(screen.getByText('hash')).toBeDefined();
       expect(create).toHaveBeenCalledTimes(2);
     });
   });
@@ -659,6 +736,40 @@ describe('Router', () => {
       expect(container.textContent).toContain('parent:shallow');
       expect(container.textContent).toContain('child:deep');
     });
+
+    it('should render the child view for a level without its own component', async () => {
+      const matched: Matched<Route>[] = [
+        {path: '/users', params: {}, route: {path: '/users'}},
+        {
+          path: '/users/posts',
+          params: {},
+          route: {path: '/users/posts', component: () => GrandChild}
+        }
+      ];
+      const view = await defaultResolveView(matched, resolveCtx);
+      const {container} = render(view);
+      // The component-less parent level renders <View/>, which resolves to
+      // the nested child view.
+      expect(container.textContent).toContain('grandchild');
+    });
+
+    it('should unwrap a component loader returning a module namespace', async () => {
+      const matched: Matched<Route>[] = [
+        {
+          path: '/lazy',
+          params: {},
+          route: {
+            path: '/lazy',
+            // The dynamic-import shape: the module's `default` export is
+            // the component, not the module itself.
+            component: () => Promise.resolve({default: GrandChild})
+          }
+        }
+      ];
+      const view = await defaultResolveView(matched, resolveCtx);
+      const {container} = render(view);
+      expect(container.textContent).toContain('grandchild');
+    });
   });
 });
 
@@ -744,6 +855,29 @@ describe('Link navigation guard', () => {
     await act(async () => {
       fireEvent.click(el);
     });
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it('should ignore a second click while the previous navigate is pending', async () => {
+    let release!: () => void;
+    vi.mocked(navigate).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const el = renderLink();
+
+    fireEvent.click(el);
+    // The first navigate is still pending: the lock swallows this click.
+    fireEvent.click(el);
+    expect(navigate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      release();
+    });
+    // The lock was released by the finally block, so clicks work again.
+    fireEvent.click(el);
     expect(navigate).toHaveBeenCalledTimes(2);
   });
 });

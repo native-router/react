@@ -34,6 +34,8 @@ import {
   createRouter,
   defaultResolveView,
   useData,
+  useLoading,
+  useNamedData,
   usePrefetch,
   useSearch,
   useSearchParams
@@ -142,6 +144,16 @@ function SearchControls() {
         }
       >
         ReplacePage
+      </button>
+      <button
+        type="button"
+        data-testid="clear-all"
+        onClick={() =>
+          // eslint-disable-next-line compat/compat -- jsdom test environment, no need for op_mini compat
+          setSearchParams(new URLSearchParams())
+        }
+      >
+        Clear
       </button>
     </div>
   );
@@ -611,6 +623,20 @@ describe('useSearchParams', () => {
     expect(screen.getByTestId('view-search').textContent).toBe('page=9');
   });
 
+  it('should drop the search entirely when set to empty params', async () => {
+    const history = renderSearchApp();
+    await flush();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('clear-all'));
+    });
+    await flush();
+    // No '?' separator is left behind on a fully cleared search.
+    expect(history.location.search).toBe('');
+    expect(history.location.pathname).toBe('/list');
+    expect(screen.getByTestId('view-search').textContent).toBe('');
+  });
+
   // setSearchParams must navigate through the same guard pipeline as any
   // other navigation, on both the push and the replace branch.
   function renderGuardedSearchApp() {
@@ -804,6 +830,36 @@ describe('NavLink', () => {
     await flush();
     expect(current('Users*')).toBe('location');
   });
+
+  it('should treat a root to="/" link as active everywhere and apply function styles', async () => {
+    const routes: Route[] = [
+      {path: '/', component: () => Home},
+      {path: '/users', component: () => A}
+    ];
+    const router = createRouter(
+      routes,
+      createMemoryHistory({initialEntries: ['/users']})
+    );
+    render(
+      <Router router={router}>
+        <NavLink
+          to="/"
+          style={({isActive}) => ({top: isActive ? '1px' : '2px'})}
+        >
+          Root
+        </NavLink>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('A')).toBeDefined();
+    // '/users'.startsWith('/') — the '/' prefix normalizes without an
+    // extra trailing slash, so the root link is partially active.
+    expect(current('Root')).toBe('page');
+    expect((screen.getByText('Root') as HTMLAnchorElement).style.top).toBe(
+      '1px'
+    );
+  });
 });
 
 describe('ScrollRestoration', () => {
@@ -825,7 +881,7 @@ describe('ScrollRestoration', () => {
     ];
     const history = createMemoryHistory({initialEntries: ['/']});
     const router = createRouter(routes, history);
-    render(
+    const view = render(
       <Router router={router}>
         <ScrollRestoration resetOnPush={resetOnPush} />
         <View />
@@ -835,7 +891,7 @@ describe('ScrollRestoration', () => {
         </nav>
       </Router>
     );
-    return {history, router};
+    return {history, router, unmount: view.unmount};
   }
 
   afterEach(() => {
@@ -944,6 +1000,81 @@ describe('ScrollRestoration', () => {
     expect(scrollTo).not.toHaveBeenCalled();
     expect(window.scrollY).toBe(120);
   });
+
+  it('should take over history.scrollRestoration as manual when present', async () => {
+    // jsdom ships no scrollRestoration, so a plain own property simulates
+    // a browser that does expose one.
+    (window.history as {scrollRestoration?: string}).scrollRestoration = 'auto';
+    try {
+      renderScrollApp();
+      await flush();
+      expect(window.history.scrollRestoration).toBe('manual');
+    } finally {
+      delete (window.history as {scrollRestoration?: string}).scrollRestoration;
+    }
+  });
+
+  it('should drop the scheduled scroll reset when unmounted before it runs', async () => {
+    const scrollTo = mockScrollTo();
+    const {history, unmount} = renderScrollApp();
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+
+    scrollTo.mockClear();
+    await act(async () => {
+      // history.push fires the listener synchronously; unmounting before
+      // the queued microtask runs flips `active` to false, so the push
+      // reset must be dropped instead of scrolling a dead component.
+      history.push('/a');
+      unmount();
+    });
+    await flush();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('should restore the top on a POP to an entry never saved in this session', async () => {
+    const scrollTo = mockScrollTo();
+    const routes: Route[] = [
+      {path: '/', component: () => Home},
+      {path: '/a', component: () => A}
+    ];
+    const history = createMemoryHistory({initialEntries: ['/']});
+    // Session one: navigate without any scroll restoration mounted, so no
+    // offset is ever saved for the left-behind entry 0.
+    const router1 = createRouter(routes, history);
+    const first = render(
+      <Router router={router1}>
+        <View />
+      </Router>
+    );
+    await flush();
+    await act(async () => {
+      await navigate(router1, '/a');
+    });
+    await flush();
+    expect(screen.getByText('A')).toBeDefined();
+    first.unmount();
+
+    // Session two(a "reload"): a fresh router and a fresh positions map
+    // over the same stack. Entry 0 predates the mount, so the POP to it
+    // falls back to the default 0,0 offset.
+    const router2 = createRouter(routes, history);
+    render(
+      <Router router={router2}>
+        <ScrollRestoration />
+        <View />
+      </Router>
+    );
+    await flush();
+    scrollTo.mockClear();
+    await act(async () => {
+      history.back();
+    });
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
 });
 
 describe('search schema', () => {
@@ -998,6 +1129,7 @@ describe('search schema', () => {
       <Router router={router}>
         <View />
         <Link to="/list?page=2">GoList</Link>
+        <Link to="/list?page=3">GoList3</Link>
       </Router>
     );
     await flush();
@@ -1012,6 +1144,16 @@ describe('search schema', () => {
     expect(loaded).toEqual([{page: 2}]);
     expect(screen.getByTestId('parsed-page').textContent).toBe('2');
     expect(screen.getByTestId('raw-page').textContent).toBe('2');
+
+    // A search change while the page is mounted re-renders it through the
+    // history subscription (not just the route re-resolve).
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoList3'));
+    });
+    await flush();
+    expect(loaded).toEqual([{page: 2}, {page: 3}]);
+    expect(screen.getByTestId('parsed-page').textContent).toBe('3');
+    expect(screen.getByTestId('raw-page').textContent).toBe('3');
   });
 
   it('should default and coerce absent params through the schema', async () => {
@@ -1120,6 +1262,49 @@ describe('search schema', () => {
     await flush();
     // 41 + 1: number arithmetic on the generic-typed data.
     expect(screen.getByTestId('article').textContent).toBe('42');
+  });
+
+  it('should read a named ancestor level through useData(name) and useNamedData', async () => {
+    function UserLayout() {
+      return (
+        <section>
+          <h1>UserLayout</h1>
+          <View />
+        </section>
+      );
+    }
+    function Posts() {
+      const user = useData<{id: string}>('user');
+      const named = useNamedData<{user: {id: string}}>();
+      return (
+        <span data-testid="posts">
+          {user?.id}:{named.user.id}
+        </span>
+      );
+    }
+
+    const routes: Route[] = [
+      {
+        path: '/user/:id',
+        name: 'user',
+        component: () => UserLayout,
+        data: ({params}) => ({id: params.id}),
+        // Children match the pathname remainder below the parent path
+        // ('/user/7' consumed → '/posts' remains).
+        children: [{path: '/posts', component: () => Posts}]
+      }
+    ];
+    const history = createMemoryHistory({initialEntries: ['/user/7/posts']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('UserLayout')).toBeDefined();
+    // The unnamed child level reads the named ancestor data both ways.
+    expect(screen.getByTestId('posts').textContent).toBe('7:7');
   });
 });
 
@@ -1319,6 +1504,58 @@ describe('route pendingComponent', () => {
       fireEvent.click(screen.getByText('GoSlow'));
     });
     expect(screen.getByTestId('skeleton')).toBeDefined();
+
+    await act(async () => {
+      gate.resolve('slow-data');
+    });
+    await flush();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+    expect(screen.getByText('slow-data')).toBeDefined();
+  });
+
+  it('should expose the load status through useLoading', async () => {
+    const gate = deferred<string>();
+    function StatusProbe() {
+      const loading = useLoading();
+      return (
+        <span data-testid="loading">{loading ? loading.status : 'idle'}</span>
+      );
+    }
+    const routes: Route[] = [
+      {path: '/slow', component: () => Page, data: () => gate.promise}
+    ];
+    render(
+      <MemoryRouter initialEntries={['/slow']} routes={routes}>
+        <View />
+        <StatusProbe />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('loading').textContent).toBe('pending');
+
+    await act(async () => {
+      gate.resolve('slow-data');
+    });
+    await flush();
+    expect(screen.getByText('slow-data')).toBeDefined();
+    // The commit settles the loading episode on its final status.
+    expect(screen.getByTestId('loading').textContent).toBe('resolved');
+  });
+
+  it('should render the pending skeleton directly when the Router has no children', async () => {
+    const gate = deferred<string>();
+    const routes: Route[] = [
+      {
+        path: '/slow',
+        component: () => Page,
+        data: () => gate.promise,
+        pendingComponent: Skeleton
+      }
+    ];
+    // Without children the Router component renders `view ?? pending`
+    // itself: the cold-start pending phase must surface the skeleton.
+    render(<MemoryRouter initialEntries={['/slow']} routes={routes} />);
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+    expect(screen.queryByText('Page')).toBeNull();
 
     await act(async () => {
       gate.resolve('slow-data');
