@@ -1,6 +1,6 @@
 {
   "name": "@native-router/react",
-  "version": "1.0.2",
+  "version": "0.0.0-development",
   "type": "module",
   "exports": {
     ".": {
