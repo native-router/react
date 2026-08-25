@@ -72,13 +72,15 @@ function Preview({visible}: {visible: boolean}) {
 - Route guards: static `redirect` and async `beforeLoad` on every route level, run shallow → deep; more than 10 chained redirects reject with `RedirectLoopError`
 - Cancelable async navigation: starting a new navigation supersedes the in-flight one; `cancel(router)` aborts it; a history POP cancels it too — and the chain's `AbortSignal` reaches every `data` loader as `ctx.signal` (`fetch(url, {signal: ctx.signal})`), so superseded navigations stop their requests instead of only having results dropped
 - `NavLink` with `isActive`/`isExactActive`, `end`, `caseSensitive` and `aria-current` (defaults to `"page"`); `className`/`style`/`children` accept `({isActive, isExactActive})` callbacks; `to="/"` is active for every path
-- `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`
+- `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — loaders receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
+- Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
-- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`
-- Two error layers: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}`
+- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`
+- Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
 - Route-level `pendingComponent` skeleton, shown only when no previous view can be retained (cold start, refresh, re-navigation after an error); the nearest matched ancestor's wins, and in-app navigation keeps the previous view instead
+  - Keeping the previous view during in-app navigation is an intentional design following browser-native semantics — see the Design Principles section of the core repository's README
 - SSR: `resolveServerView` (from `@native-router/react/server`) renders the view plus an inline data payload; `hydrate` reuses that payload on the client with zero refetch
 - Tree-shakable: `sideEffects: false` — unused components and hooks drop out of the bundle
 
@@ -251,6 +253,50 @@ function ArticleList() {
 ```
 
 `useSearch()` without a schema degrades to the raw input object of `parseSearchInput` (strings; repeated keys are arrays) and needs no schema on the route. Both flavors re-render on every location change, and the schema must validate synchronously.
+
+Write the search through the same schema — `useSetSearch(schema)` validates the next value before any navigation, throws `SearchError` (with the schema's issues) without touching the location when it rejects, and writes the schema's own output so defaults apply:
+
+```tsx
+import {useSearch, useSetSearch} from '@native-router/react';
+
+function Pager() {
+  const {page} = useSearch(listSearch);
+  const setSearch = useSetSearch(listSearch);
+
+  function go(next: number) {
+    setSearch({page: String(next)}); // push; {replace: true} rewrites
+  }
+  // ...
+}
+```
+
+Make `Link` targets type-safe: build the table with `createRoutes` (a `satisfies`-style identity function that keeps every `path` literal), extract the pattern union with `RoutePaths`, and narrow `TypedLink` to it. `params` is checked against the exact pattern's param segments — `:name` wants a string, `*name` a string array:
+
+```tsx
+import {TypedLink, createRoutes} from '@native-router/react';
+import type {RoutePaths} from '@native-router/react';
+
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  children: [
+    {path: '/', component: () => import('./Home')},
+    {path: '/users/:id', component: () => import('./UserProfile')},
+    {path: '/files/*rest', component: () => import('./Files')}
+  ]
+});
+
+type AppPaths = RoutePaths<typeof routes>; // '/' | '/users/:id' | '/files/*rest'
+
+<TypedLink<AppPaths> to="/users/:id" params={{id: '7'}}>User 7</TypedLink>
+// @ts-expect-error '/help' is not a pattern of the table
+<TypedLink<AppPaths> to="/help">Help</TypedLink>
+// @ts-expect-error params are required for '/users/:id'
+<TypedLink<AppPaths> to="/users/:id">User ?</TypedLink>
+```
+
+At click time the params are interpolated into the pattern (values percent-encoded, wildcard segments joined with `/`); a missing required param throws instead of navigating — the runtime backstop of the type-level check. An `as Route` assertion widens every `path` to `string`, so `RoutePaths` degrades to `string` and `TypedLink` accepts any path, exactly like a plain `Link` — the migration is opt-in.
+
+A render error never crashes past its route: the level's resolved view is wrapped in a route-level error boundary, which renders the same route `errorComponent` with `ctx.phase === 'render'` (the resolve-phase fallback passes no `phase`). Without a route `errorComponent` the error goes to the global `errorHandler`; the boundary keeps working across recoveries — a retry button can `refresh(router)`, and navigating away renders the next view normally.
 
 See [demos](./demos) for a complete example.
 

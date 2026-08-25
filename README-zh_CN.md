@@ -72,13 +72,15 @@ function Preview({visible}: {visible: boolean}) {
 - 路由守卫：每层路由支持静态 `redirect` 与异步 `beforeLoad`，按浅层到深层执行；连续重定向超过 10 次以 `RedirectLoopError` 拒绝
 - 可取消的异步导航：发起下一次导航会取代进行中的导航；`cancel(router)` 主动中止；history POP 也会取消——同时导航链的 `AbortSignal` 以 `ctx.signal` 传入每个 `data` loader（`fetch(url, {signal: ctx.signal})`），被取代的导航真正停止请求而非仅丢弃结果
 - `NavLink`：`isActive`/`isExactActive`、`end`、`caseSensitive` 与 `aria-current`（默认 `"page"`）；`className`/`style`/`children` 支持 `({isActive, isExactActive})` 回调；`to="/"` 对所有路径都是激活态
-- `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目
+- `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——loader 拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
+- 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
-- Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`
-- 两层错误处理：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）
+- Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`
+- 两层错误处理、两个阶段：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）——`errorComponent` 既渲染 resolve 期失败（loader/守卫/search，无 `ctx.phase`），也渲染组件子树的渲染期抛错（`ctx.phase === 'render'`，由路由级错误边界捕获，渲染崩溃不会越过路由炸到 React 根，正如浏览器对任何加载失败都有错误页）
 - 路由级 `pendingComponent` 骨架屏：仅当没有可保留的旧视图时（冷启动、刷新、错误后的重新导航）渲染，取匹配链上最近祖先的；应用内导航依旧保留旧视图，不会闪骨架屏
+  - 应用内导航保留旧视图是浏览器原生语义的有意设计，见 core 仓库 README 的设计原则章节
 - SSR：`resolveServerView`（来自 `@native-router/react/server`）渲染视图并内联数据载荷；客户端 `hydrate` 复用载荷，零重复请求
 - Tree-Shaking 友好：`sideEffects: false`，未用到的组件与 hooks 会被摇掉
 
@@ -251,6 +253,50 @@ function ArticleList() {
 ```
 
 不带 schema 的 `useSearch()` 退化为 `parseSearchInput` 的原始输入对象（字符串；重复键是数组），路由上无需声明 schema。两种写法都在每次 location 变化时重渲染；schema 需同步校验。
+
+用同一 schema 写 search——`useSetSearch(schema)` 在任何导航前校验下一个值，拒绝时抛 `SearchError`（带 schema 的 issues）且不触碰 location，写入的是 schema 自身的输出，缺省值已补齐：
+
+```tsx
+import {useSearch, useSetSearch} from '@native-router/react';
+
+function Pager() {
+  const {page} = useSearch(listSearch);
+  const setSearch = useSetSearch(listSearch);
+
+  function go(next: number) {
+    setSearch({page: String(next)}); // push；{replace: true} 改写当前条目
+  }
+  // ...
+}
+```
+
+让 `Link` 目标类型安全：用 `createRoutes` 构建路由表（`satisfies` 语义的 identity 函数，保留全部 `path` 字面量），用 `RoutePaths` 提取模式联合，再把 `TypedLink` 收窄到该联合。`params` 按目标模式的参数段检查——`:name` 要 string，`*name` 要 string 数组：
+
+```tsx
+import {TypedLink, createRoutes} from '@native-router/react';
+import type {RoutePaths} from '@native-router/react';
+
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  children: [
+    {path: '/', component: () => import('./Home')},
+    {path: '/users/:id', component: () => import('./UserProfile')},
+    {path: '/files/*rest', component: () => import('./Files')}
+  ]
+});
+
+type AppPaths = RoutePaths<typeof routes>; // '/' | '/users/:id' | '/files/*rest'
+
+<TypedLink<AppPaths> to="/users/:id" params={{id: '7'}}>User 7</TypedLink>
+// @ts-expect-error '/help' 不在表内
+<TypedLink<AppPaths> to="/help">Help</TypedLink>
+// @ts-expect-error '/users/:id' 必须带 params
+<TypedLink<AppPaths> to="/users/:id">User ?</TypedLink>
+```
+
+点击时把 params 插值进模式（值做百分号编码，wildcard 段以 `/` 连接）；缺必填参数会抛错而不导航——类型层校验的运行时兜底。`as Route` 断言会把所有 `path` 拓宽成 `string`，`RoutePaths` 退化为 `string`，`TypedLink` 退化为普通 `Link`——迁移是可选的。
+
+渲染错误不会越过路由崩溃：该层解析出的视图外包了路由级错误边界，它用同一路由的 `errorComponent` 渲染并带 `ctx.phase === 'render'`（resolve 期的兜底不带 `phase`）。无路由 `errorComponent` 时错误交给全局 `errorHandler`；边界在恢复后继续工作——重试按钮可 `refresh(router)`，导航离开则正常渲染下一个视图。
 
 查看 [完整示例](./demos)。
 

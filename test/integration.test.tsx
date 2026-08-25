@@ -8,7 +8,15 @@
  * data fetchers are allowed. Future integration cases(route guards,
  * NavLink, scroll restoration, ...) should be appended here.
  */
-import {describe, it, expect, expectTypeOf, vi, afterEach} from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  expectTypeOf,
+  vi,
+  afterEach,
+  beforeEach
+} from 'vitest';
 import {render, screen, act, fireEvent} from '@testing-library/react';
 import React from 'react';
 import {createBrowserHistory, createMemoryHistory} from 'history';
@@ -30,17 +38,20 @@ import {
   PrefetchLink,
   Router,
   ScrollRestoration,
+  TypedLink,
   View,
   createRouter,
+  createRoutes,
   defaultResolveView,
   useData,
   useLoading,
   useNamedData,
   usePrefetch,
   useSearch,
-  useSearchParams
+  useSearchParams,
+  useSetSearch
 } from '../src/index';
-import type {Route} from '../src/types';
+import type {Route, RoutePaths} from '../src/types';
 
 // Route resolution chains are promise-chained but never timer based, so a
 // bounded number of microtask ticks is a deterministic flush(no timer
@@ -1563,5 +1574,375 @@ describe('route pendingComponent', () => {
     await flush();
     expect(screen.queryByTestId('skeleton')).toBeNull();
     expect(screen.getByText('slow-data')).toBeDefined();
+  });
+});
+
+describe('TypedLink', () => {
+  const routes = createRoutes({
+    children: [
+      {path: '/', component: () => Home},
+      {path: '/users/:id', component: () => Page},
+      {path: '/files/*rest', component: () => Page}
+    ]
+  });
+  type Paths = RoutePaths<typeof routes>;
+
+  function TypedApp() {
+    return (
+      <MemoryRouter routes={routes}>
+        <nav>
+          <TypedLink<Paths> to="/" data-testid="home-link">
+            Home
+          </TypedLink>
+          <TypedLink<Paths>
+            to="/users/:id"
+            params={{id: '7'}}
+            data-testid="user-link"
+          >
+            User7
+          </TypedLink>
+          <TypedLink<Paths>
+            to="/files/*rest"
+            params={{rest: ['a', 'b c']}}
+            data-testid="files-link"
+          >
+            Files
+          </TypedLink>
+        </nav>
+        <View />
+      </MemoryRouter>
+    );
+  }
+
+  it('should interpolate params into the href and navigate to the target', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <nav>
+          <TypedLink<Paths> to="/" data-testid="home-link">
+            Home
+          </TypedLink>
+          <TypedLink<Paths>
+            to="/users/:id"
+            params={{id: '7'}}
+            data-testid="user-link"
+          >
+            User7
+          </TypedLink>
+        </nav>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByTestId('user-link').getAttribute('href')).toBe(
+      '/users/7'
+    );
+    fireEvent.click(screen.getByTestId('user-link'));
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    // the navigated location carries the interpolated param
+    expect(history.location.pathname).toBe('/users/7');
+  });
+
+  it('should encode param values and join wildcard segments with /', async () => {
+    render(<TypedApp />);
+    await flush();
+    expect(screen.getByTestId('files-link').getAttribute('href')).toBe(
+      '/files/a/b%20c'
+    );
+  });
+
+  it('should keep the plain Link behavior for modified clicks', async () => {
+    render(<TypedApp />);
+    await flush();
+    fireEvent.click(screen.getByTestId('user-link'), {ctrlKey: true});
+    await flush();
+    // no in-app navigation happened
+    expect(screen.queryByText('Page')).toBeNull();
+  });
+
+  it('should throw on click when a required param is missing (runtime backstop)', async () => {
+    // The type-level check flags this at compile time; the runtime guard
+    // covers untyped callers — plain TypedLink with a cast bypasses the
+    // props check entirely.
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    // Full-props cast: the untyped-caller shape reaches the runtime
+    // exactly as an untyped table would produce it.
+    const BadLink = TypedLink as unknown as (props: {
+      to: string;
+      params?: Record<string, string>;
+      'data-testid'?: string;
+      children?: React.ReactNode;
+    }) => React.ReactElement;
+    render(
+      <MemoryRouter routes={routes}>
+        <BadLink to="/users/:id" params={{}} data-testid="bad-link">
+          Bad
+        </BadLink>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    // Rendering with a missing param keeps the raw pattern in the href
+    expect(screen.getByTestId('bad-link').getAttribute('href')).toBe(
+      '/users/:id'
+    );
+    // The click-time check throws inside the event handler; jsdom reports
+    // handler errors as window errors instead of propagating them to the
+    // dispatch caller, so capture through the window error hook.
+    const handlerErrors: Error[] = [];
+    const onWindowError = (e: ErrorEvent) => handlerErrors.push(e.error);
+    window.addEventListener('error', onWindowError);
+    try {
+      fireEvent.click(screen.getByTestId('bad-link'));
+    } finally {
+      window.removeEventListener('error', onWindowError);
+    }
+    expect(handlerErrors[0]?.message).toMatch(/Missing param "id"/);
+    // and no navigation happened
+    expect(screen.queryByText('Page')).toBeNull();
+    consoleError.mockRestore();
+  });
+});
+
+describe('useSetSearch', () => {
+  /** Same shape as the `search schema` suite: coerces `page`, defaults to 1. */
+  const pageSearch: StandardSchemaV1<unknown, {page: number}> = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate(value) {
+        const {page} = (value ?? {}) as {page?: unknown};
+        const parsed = Number(page ?? 1);
+        return Number.isInteger(parsed) && parsed >= 1
+          ? {value: {page: parsed}}
+          : {
+              issues: [{message: 'expected a positive integer', path: ['page']}]
+            };
+      }
+    }
+  };
+
+  let setSearchError: Error | undefined;
+
+  function SetSearchApp() {
+    const search = useSearch(pageSearch);
+    // Values are the raw input shape (strings) — the schema coerces.
+    const setSearch = useSetSearch(pageSearch);
+    return (
+      <div>
+        <span data-testid="page">{search.page}</span>
+        <button
+          type="button"
+          data-testid="set-page"
+          onClick={() => setSearch({page: '3'})}
+        >
+          Set3
+        </button>
+        <button
+          type="button"
+          data-testid="set-bad"
+          onClick={() => {
+            try {
+              setSearch({page: '-1'});
+            } catch (e) {
+              setSearchError = e as Error;
+            }
+          }}
+        >
+          SetBad
+        </button>
+        <button
+          type="button"
+          data-testid="set-default"
+          onClick={() => setSearch({})}
+        >
+          SetDefault
+        </button>
+      </div>
+    );
+  }
+
+  beforeEach(() => {
+    setSearchError = undefined;
+  });
+
+  function renderApp(initialSearch = '?page=2') {
+    const history = createMemoryHistory({
+      initialEntries: [`/list${initialSearch}`]
+    });
+    const routes: Route[] = [{path: '/list', component: () => SetSearchApp}];
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    return history;
+  }
+
+  it('should write a schema-valid value and navigate', async () => {
+    const history = renderApp();
+    await flush();
+    expect(screen.getByTestId('page').textContent).toBe('2');
+
+    fireEvent.click(screen.getByTestId('set-page'));
+    await flush();
+    expect(screen.getByTestId('page').textContent).toBe('3');
+    expect(history.location.search).toBe('?page=3');
+  });
+
+  it('should throw SearchError with issues and not navigate on an invalid value', async () => {
+    const history = renderApp();
+    await flush();
+
+    fireEvent.click(screen.getByTestId('set-bad'));
+    await flush();
+    expect(setSearchError).toBeInstanceOf(SearchError);
+    expect(setSearchError!.message).toContain('page');
+    // location untouched
+    expect(history.location.search).toBe('?page=2');
+    expect(screen.getByTestId('page').textContent).toBe('2');
+  });
+
+  it('should write the schema output so defaults apply', async () => {
+    const history = renderApp();
+    await flush();
+
+    fireEvent.click(screen.getByTestId('set-default'));
+    await flush();
+    expect(history.location.search).toBe('?page=1');
+    expect(screen.getByTestId('page').textContent).toBe('1');
+  });
+
+  it('should accept functional updates based on the current search', async () => {
+    const history = createMemoryHistory({initialEntries: ['/list?page=4']});
+    const routes: Route[] = [{path: '/list', component: () => SetSearchApp}];
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByTestId('page').textContent).toBe('4');
+  });
+});
+
+describe('render-phase route error boundary', () => {
+  function Boom(): never {
+    throw new Error('boom crashed');
+  }
+
+  it('should render the route errorComponent with ctx.phase === "render" and recover by navigating away', async () => {
+    let phase: string | undefined;
+    let seenError: Error | undefined;
+    let capturedRouter: ReturnType<typeof createRouter> | undefined;
+    const routes: Route[] = [
+      {path: '/', component: () => Home},
+      {
+        path: '/boom',
+        component: () => Boom,
+        errorComponent: ({error, ctx}) => {
+          capturedRouter = ctx.router;
+          seenError = error;
+          phase = ctx.phase;
+          return (
+            <div role="alert">
+              RenderError:{error.message}
+              <button
+                type="button"
+                data-testid="retry"
+                onClick={() => {
+                  refresh(ctx.router);
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          );
+        }
+      }
+    ];
+    render(<MemoryRouter initialEntries={['/boom']} routes={routes} />);
+    await flush();
+    // The render error surfaces through the route errorComponent, with
+    // the render phase marker — not a crash to the React root.
+    expect(screen.getByRole('alert').textContent).toContain(
+      'RenderError:boom crashed'
+    );
+    expect(phase).toBe('render');
+    expect(seenError).toBeInstanceOf(Error);
+
+    // Recovery: the retry button triggers a refresh(router); Boom throws
+    // again so the errorComponent stays, proving the boundary keeps
+    // working after the first catch(the view slot is not wedged).
+    fireEvent.click(screen.getByTestId('retry'));
+    await flush();
+    expect(screen.getByRole('alert').textContent).toContain(
+      'RenderError:boom crashed'
+    );
+
+    // And a plain navigate() away renders the new view normally.
+    await act(async () => {
+      navigate(capturedRouter!, '/');
+    });
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('should fall back to the global errorHandler when no route errorComponent is set', async () => {
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const routes: Route[] = [
+      {path: '/', component: () => Home},
+      {path: '/boom', component: () => Boom}
+    ];
+    render(
+      <MemoryRouter
+        initialEntries={['/boom']}
+        routes={routes}
+        errorHandler={(e) => <div role="alert">global:{e.message}</div>}
+      />
+    );
+    await flush();
+    expect(screen.getByRole('alert').textContent).toBe('global:boom crashed');
+    consoleError.mockRestore();
+  });
+
+  it('should keep ancestor levels mounted while the failing leaf renders its errorComponent', async () => {
+    function Layout() {
+      return (
+        <section>
+          <h2>Layout</h2>
+          <View />
+        </section>
+      );
+    }
+    const routes: Route[] = [
+      {
+        path: '/x',
+        component: () => Layout,
+        children: [
+          {
+            path: '/boom',
+            component: () => Boom,
+            errorComponent: ({error}) => (
+              <p role="alert">leaf:{error.message}</p>
+            )
+          }
+        ]
+      }
+    ];
+    render(<MemoryRouter initialEntries={['/x/boom']} routes={routes} />);
+    await flush();
+    // The layout survives; only the failing leaf is replaced
+    expect(screen.getByText('Layout')).toBeDefined();
+    expect(screen.getByRole('alert').textContent).toBe('leaf:boom crashed');
   });
 });

@@ -41,6 +41,14 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./test/setup.ts'],
     include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)', 'test/ssr.tsx'],
+    // Source-level type tests (`@ts-expect-error` compile assertions):
+    // tsc runs over exactly these files with the test tsconfig(rootDir
+    // "."), mirroring `npm run typecheck` without re-checking runtime
+    // tests.
+    typecheck: {
+      tsconfig: './tsconfig.test.json',
+      include: ['test/types.test.tsx']
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

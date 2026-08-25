@@ -73,23 +73,100 @@ export function useSearchParams(): [URLSearchParams, SetSearchParams] {
           ? // eslint-disable-next-line compat/compat -- URLSearchParams support is the app's polyfill concern, not bundled
             next(new URLSearchParams(history.location.search))
           : next;
-      const qs = params.toString();
-      const {pathname, hash} = history.location;
-      const to = pathname + (qs ? `?${qs}` : '') + hash;
-      if (opts?.replace) {
-        // Route guards run like any other navigation(align with the push
-        // branch): the entry carries the terminal location, so a redirect
-        // replaces the current entry with its final target.
-        return resolveEntry(router, toLocation(router, to)).then((entry) =>
-          commitReplace(router, entry.task, entry.location)
-        );
-      }
-      return navigate(router, to);
+      return setSearch(router, params.toString(), opts);
     },
     [router]
   );
 
   return [searchParams, setSearchParams];
+}
+
+/**
+ * Write the search params of the current location through a schema, the
+ * setter-side twin of `useSearch(schema)`: the next value is serialized
+ * to a query string, degraded with `parseSearchInput` and validated by
+ * the SAME schema before any navigation happens. A schema that rejects
+ * the value throws its issues(`SearchError`) without touching the
+ * location; the value the schema would default or coerce on the read
+ * side never gets silently written.
+ *
+ * Synchronous schemas only(the `useSearch` flavor); an async `validate`
+ * rejects without navigating.
+ *
+ * The navigation semantics follow `useSearchParams`' setter: push by
+ * default, `{replace: true}` rewrites the current entry, guards run,
+ * and the returned `Promise<void>` resolves once the navigation commits.
+ *
+ * @group Hooks
+ * @param schema a Standard Schema validator of the search — must
+ * validate synchronously
+ * @returns the schema-aware setter; functional updates receive the live
+ * previous params
+ * @throws {SearchError} when `schema` rejects the next value, before
+ * any navigation
+ */
+export function useSetSearch<S extends StandardSchemaV1>(
+  schema: S
+): (
+  next: SearchInput | ((prev: SearchInput) => SearchInput),
+  opts?: {replace?: boolean}
+) => Promise<void> | void {
+  const router = useRouter();
+
+  return useCallback(
+    (next, opts) => {
+      const {history} = router;
+      const input =
+        typeof next === 'function'
+          ? next(parseSearchInput(history.location.search))
+          : next;
+      // Validate the whole next value — not a diff — the same way a
+      // navigation to the resulting URL would: parseSearchSync throws
+      // SearchError with the schema's issues, and no navigation happens.
+      const validated = parseSearchSync(schema, stringifySearch(input));
+      // The schema output is authoritative: defaults applied and values
+      // coerced to strings, so a partially-filled input still writes the
+      // fully-defaulted query.
+      return setSearch(
+        router,
+        stringifySearch(validated as Record<string, unknown>),
+        opts
+      );
+    },
+    [router, schema]
+  );
+}
+
+function stringifySearch(input: Record<string, unknown>): string {
+  return Object.entries(input)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) =>
+      (Array.isArray(value) ? value : [value])
+        .map(
+          (v) => `${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`
+        )
+        .join('&')
+    )
+    .join('&');
+}
+
+function setSearch(
+  router: ReturnType<typeof useRouter>,
+  qs: string,
+  opts?: {replace?: boolean}
+): Promise<void> | void {
+  const {history} = router;
+  const {pathname, hash} = history.location;
+  const to = pathname + (qs ? `?${qs}` : '') + hash;
+  if (opts?.replace) {
+    // Route guards run like any other navigation(align with the push
+    // branch): the entry carries the terminal location, so a redirect
+    // replaces the current entry with its final target.
+    return resolveEntry(router, toLocation(router, to)).then((entry) =>
+      commitReplace(router, entry.task, entry.location)
+    );
+  }
+  return navigate(router, to);
 }
 
 /**

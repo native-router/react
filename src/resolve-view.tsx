@@ -7,6 +7,7 @@ import {
 } from '@native-router/core';
 import type {Matched} from '@native-router/core';
 import {DataProvider, MatchedContext, View, ViewProvider} from './context';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
 
 /**
  * The default implementation of resolve view
@@ -95,11 +96,32 @@ function resolveViewBase(
       // otherwise the error bubbles up to the global errorHandler as before.
       return Promise.all([resolveDataWithSearch(), resolveComponent()]).then(
         ([data, C]) => (
-          <DataProvider data={data} name={route.name}>
-            <MatchedContext.Provider value={ctx}>
-              <C />
-            </MatchedContext.Provider>
-          </DataProvider>
+          // The boundary is the render-phase twin of the resolve-phase
+          // fallback below: a component that throws while rendering is
+          // caught here and rendered through the same route errorComponent
+          // (with ctx.phase === 'render'), instead of crashing past the
+          // route to the React root.
+          // Keyed by the level's path so React never reuses one route's
+          // boundary fiber for another's at the same slot: a retained
+          // error state would otherwise leak across routes when the
+          // tree diff lands the same position(the class instance — and
+          // its `state.error` — survives the prop change, and React
+          // replays the cached error during the swap). The level index
+          // only disambiguates same-path levels of one chain.
+
+          <RouteErrorBoundary
+            // eslint-disable-next-line @eslint-react/no-array-index-key -- not a list key: a per-level boundary identity (path + level)
+            key={`${index}:${route.path ?? ''}`}
+            route={route}
+            ctx={ctx}
+            router={router}
+          >
+            <DataProvider data={data} name={route.name}>
+              <MatchedContext.Provider value={ctx}>
+                <C />
+              </MatchedContext.Provider>
+            </DataProvider>
+          </RouteErrorBoundary>
         ),
         (error: Error) => {
           if (!route.errorComponent) throw error;
