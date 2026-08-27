@@ -1,4 +1,4 @@
-import type {Route} from '@@/types';
+import type {Route, SearchRoutesOf} from '@@/types';
 
 /**
  * Identity function with `satisfies` semantics: the table is checked
@@ -7,30 +7,48 @@ import type {Route} from '@@/types';
  * `TypedLink`. An `as Route` assertion does the opposite — it widens
  * every `path` to `string` and gives up the literals.
  *
+ * The return type additionally closes the search loop(see
+ * {@link SearchRoutesOf}): every level's `data` loader and `beforeLoad`
+ * guard receive their `ctx.search` typed from the level's own
+ * {@link Route.search search schema} —
+ *
  * ```tsx
  * const routes = createRoutes({
  *   children: [
- *     {path: '/', component: () => import('./Home')},
- *     {path: '/users/:id', component: () => import('./UserProfile')}
+ *     {
+ *       path: '/list',
+ *       search: z.object({page: z.coerce.number()}),
+ *       // typeof routes → ctx.search: {page: number}, no annotations
+ *       data: ({search}) => fetchList(search.page)
+ *     }
  *   ]
  * });
- * // type AppPaths = '/' | '/users/:id'
- * type AppPaths = RoutePaths<typeof routes>;
  * ```
+ *
+ * Callbacks written inside the literal are still checked loosely
+ * against `Route`(`ctx.search: any` — TypeScript cannot contextually
+ * type a member from sibling properties); the precise types hold on the
+ * returned table, and a callback whose annotation contradicts the
+ * schema is rejected at the property. An explicit `Route<P, S>` generic
+ * keeps priority wherever it is written.
  *
  * Zero runtime cost: the function returns its argument unchanged and
  * tree-shakes away.
  * @group Methods
  * @category Route
  * @param routes the route table, a route object or an array of them
- * @returns the very same route table, literal types preserved
+ * @returns the very same route table, literal types preserved and the
+ * loader/guard search contexts re-typed from the schemas
  */
 export function createRoutes<const T>(
   // The `const` modifier keeps every `path` a string literal(through
   // arbitrary nesting) while the parameter is still checked against
   // `Route` — the `satisfies` semantics an `as Route` assertion lacks:
-  // the assertion widens every `path` to `string` instead.
-  routes: T & (Route | Route[])
-): T {
+  // the assertion widens every `path` to `string` instead. The
+  // `SearchRoutesOf<T>` member re-types the level contexts on the
+  // checked argument, so an annotation that contradicts the level's
+  // schema fails right at the property.
+  routes: T & SearchRoutesOf<T> & (Route | Route[])
+): SearchRoutesOf<T> {
   return routes;
 }

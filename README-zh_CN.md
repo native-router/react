@@ -74,7 +74,8 @@ function Preview({visible}: {visible: boolean}) {
 - `NavLink`：`isActive`/`isExactActive`、`end`、`caseSensitive` 与 `aria-current`（默认 `"page"`）；`className`/`style`/`children` 支持 `({isActive, isExactActive})` 回调；`to="/"` 对所有路径都是激活态
 - 多态链接：四个 Link 组件都接受 `as` 组件——组件自有 props 摊平到链接上并做类型检查，冲突 props 走 `asProps` 逃生舱，`href`/`onClick`/`aria-current` 由链接注入，`ref` 透传
 - `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）
-- 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——loader 拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
+- 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——`data` loader 与 `beforeLoad` 守卫都拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
+- search 类型闭环：`createRoutes(routes)` 重写返回表的类型，每层的 `data`/`beforeLoad` `ctx.search` 从该层自己的 schema 输出推导——不再需要 `Route<P, S>` 泛型或回调注解；显式写出的 `Route<P, S>` 泛型仍优先
 - 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
@@ -259,11 +260,12 @@ import {ScrollRestoration} from '@native-router/react';
 
 挂载时它还会把 `history.scrollRestoration` 设为 `manual`：浏览器自身的 `auto` 恢复会与组件的恢复竞争、在离开条目的偏移尚未读完时就抢先滚动，因此整个会话期间滚动恢复由组件全权负责（卸载时不回写 `auto`）。
 
-用 schema 校验并类型化 search——任何 zod/valibot/arktype schema 都可以，路由只讲 [Standard Schema](https://standardschema.dev)。在路由上声明一次，search 就会在 resolve 期间解析：`data` loader 拿到类型化的 `ctx.search`（数字已转换、默认值已应用），非法 search 则经既有错误层失败——先路由级 `errorComponent`，否则全局 `errorHandler`。
+用 schema 校验并类型化 search——任何 zod/valibot/arktype schema 都可以，路由只讲 [Standard Schema](https://standardschema.dev)。在路由上声明一次，search 就会在 resolve 期间解析：`data` loader 与 `beforeLoad` 守卫都拿到类型化的 `ctx.search`（数字已转换、默认值已应用），非法 search 则经既有错误层失败——先路由级 `errorComponent`，否则全局 `errorHandler`。
+
+用 `createRoutes` 构建路由表，类型自动闭环：返回表上每层的 `ctx.search` 从该层自己的 schema 推导，`Route<P, S>` 泛型与回调注解都不再需要。（字面量内直接写的回调按宽松 `Route` 检查——`ctx.search: any`——TypeScript 无法用同级属性做上下文类型；精确类型在返回表上成立，与 schema 矛盾的回调注解会在属性处被拒。）
 
 ```tsx
-import {useData, useSearch} from '@native-router/react';
-import type {Route} from '@native-router/react';
+import {createRoutes, useData, useSearch} from '@native-router/react';
 import {z} from 'zod';
 
 const listSearch = z.object({
@@ -271,14 +273,19 @@ const listSearch = z.object({
   tag: z.string().optional()
 });
 
-const listRoute = {
-  path: '/articles',
-  search: listSearch,
-  component: () => import('./ArticleList'),
-  // ctx.search: {page: number; tag?: string} —— 已解析、已类型化
-  data: ({search}) => fetchArticles(search.page, search.tag),
-  errorComponent: ({error}) => <p>{error.message}</p>
-} as Route<'/articles', {page: number; tag?: string}>;
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  children: [
+    {
+      path: '/articles',
+      search: listSearch,
+      component: () => import('./ArticleList'),
+      // typeof routes → 本层 ctx.search: {page: number; tag?: string}
+      data: ({search}) => fetchArticles(search.page, search.tag),
+      errorComponent: ({error}) => <p>{error.message}</p>
+    }
+  ]
+});
 
 function ArticleList() {
   const articles = useData<Article[]>(); // 类型化读取，无需 as
@@ -286,6 +293,16 @@ function ArticleList() {
   const raw = useSearch(); // 退化的原始对象：{page: '2'} 字符串
   // ...
 }
+```
+
+手工注解的路由对象仍可用显式泛型——写了就优先：
+
+```tsx
+const listRoute = {
+  path: '/articles',
+  search: listSearch,
+  component: () => import('./ArticleList')
+} as Route<'/articles', {page: number; tag?: string}>;
 ```
 
 不带 schema 的 `useSearch()` 退化为 `parseSearchInput` 的原始输入对象（字符串；重复键是数组），路由上无需声明 schema。两种写法都在每次 location 变化时重渲染；schema 需同步校验。

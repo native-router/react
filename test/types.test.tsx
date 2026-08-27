@@ -26,6 +26,8 @@ import type {
   NavLinkProps,
   Route,
   RoutePaths,
+  SearchInput,
+  StandardSchemaV1,
   TypedLinkProps
 } from '../src/types';
 
@@ -291,5 +293,137 @@ describe('ComponentProps regression', () => {
     expectTypeOf(navProps).toExtend<NavLinkProps>();
     expectTypeOf(prefetchProps).toExtend<LinkProps>();
     expectTypeOf(typedProps).toExtend<TypedLinkProps>();
+  });
+});
+
+// 任务：createRoutes 的 search 类型闭环——返回表上每层 data/beforeLoad 的
+// ctx.search 从该层自己的 search schema 输出推导（SearchRoutesOf）。
+describe('createRoutes search closure', () => {
+  // 手写 Standard Schema 夹具（与 core 测试同款）：coerce page 为正整数。
+  const pageSchema: StandardSchemaV1<unknown, {page: number}> = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value) => {
+        const n = Number((value as {page?: unknown}).page);
+        return {
+          value: {page: Number.isFinite(n) && n > 0 ? Math.floor(n) : 0}
+        };
+      }
+    }
+  };
+
+  it('should derive ctx.search of data and beforeLoad from the level schema', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/list',
+          search: pageSchema,
+          beforeLoad: ({search}) =>
+            search.page > 0 ? undefined : '/list?page=1',
+          data: ({search}): number => search.page
+        }
+      ]
+    });
+    void routes;
+    type ListRoute = NonNullable<(typeof routes)['children']>[number];
+    expectTypeOf<
+      Parameters<NonNullable<ListRoute['data']>>[0]['search']
+    >().toEqualTypeOf<{page: number}>();
+    expectTypeOf<
+      Parameters<NonNullable<ListRoute['beforeLoad']>>[0]['search']
+    >().toEqualTypeOf<{page: number}>();
+    // 返回类型原样保留（loader 声明的返回不丢）。
+    expectTypeOf<
+      ReturnType<NonNullable<ListRoute['data']>>
+    >().toEqualTypeOf<number>();
+    // path 字面量仍在：RoutePaths/TypedLink 契约不受影响。
+    expectTypeOf<ListRoute['path']>().toEqualTypeOf<'/list'>();
+  });
+
+  it('should degrade ctx.search to SearchInput on schema-less levels', () => {
+    const routes = createRoutes({
+      children: [
+        {path: '/plain', beforeLoad: ({search}) => (search.q ? undefined : '/')}
+      ]
+    });
+    void routes;
+    type PlainRoute = NonNullable<(typeof routes)['children']>[number];
+    expectTypeOf<
+      Parameters<NonNullable<PlainRoute['beforeLoad']>>[0]['search']
+    >().toEqualTypeOf<SearchInput>();
+  });
+
+  it('should recurse through nested children', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/section',
+          children: [
+            {
+              path: '/inner',
+              search: pageSchema,
+              data: ({search}) => search.page
+            }
+          ]
+        }
+      ]
+    });
+    void routes;
+    type Inner = NonNullable<
+      NonNullable<
+        NonNullable<(typeof routes)['children']>[number]['children']
+      >[number]
+    >;
+    expectTypeOf<
+      Parameters<NonNullable<Inner['data']>>[0]['search']
+    >().toEqualTypeOf<{page: number}>();
+  });
+
+  it('should reject a callback annotation that contradicts the schema', () => {
+    createRoutes({
+      children: [
+        {
+          path: '/list',
+          search: pageSchema,
+          // @ts-expect-error {page: string} 与 schema 输出 {page: number} 冲突
+          data: ({search}: {search: {page: string}}): string => search.page
+        }
+      ]
+    });
+  });
+
+  it('should drift-check ctx.search against the derived table types', () => {
+    const routes = createRoutes({
+      children: [
+        {path: '/list', search: pageSchema, data: ({search}) => search.page}
+      ]
+    });
+    void routes;
+    type ListCtx = Parameters<
+      NonNullable<NonNullable<(typeof routes)['children']>[number]['data']>
+    >[0];
+    // @ts-expect-error page 是 number，不接受 string 值形状
+    const wrong: ListCtx['search'] = {page: 'one'};
+    // @ts-expect-error 不存在的字段
+    const missing: ListCtx['search'] = {nonexistent: 1};
+    void wrong;
+    void missing;
+  });
+
+  it('should keep the explicit Route<P, S> generic in charge when written', () => {
+    type Manual = {page: string};
+    const manual: Route<'/manual', Manual> = {
+      path: '/manual',
+      search: pageSchema,
+      data: ({search}) => search.page
+    };
+    expectTypeOf<
+      Parameters<NonNullable<Route<'/manual', Manual>['data']>>[0]['search']
+    >().toEqualTypeOf<Manual>();
+    // Route['beforeLoad'] 注解（painless requireLogin 模式）仍可用。
+    const guard: Route['beforeLoad'] = ({search}) => (search ? undefined : '/');
+    void guard;
+    void manual;
   });
 });

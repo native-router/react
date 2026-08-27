@@ -9,12 +9,15 @@ import type {
   ReactNode
 } from 'react';
 import type {
+  Awaitable,
   BaseRoute,
   ExtractPathParams,
+  GuardContext,
   Matched,
   Location,
   RouterInstance,
-  SearchInput
+  SearchInput,
+  StandardSchemaV1
 } from '@native-router/core';
 
 export type ResolveViewContext<R extends BaseRoute> = {
@@ -81,14 +84,18 @@ export type RouteParams<P extends string> = string extends P
  * `Route<'/users/:id'>` → `params: {id: string}`. Give the second
  * generic the output type of the route `search` schema and `ctx.search`
  * is typed accordingly, e.g. `Route<'/list', {page: number}>` with
- * `search: z.object({page: z.coerce.number()})` → `search: {page: number}`.
+ * `search: z.object({page: z.coerce.number()})` → `search: {page: number}` —
+ * for the `data` loader and the `beforeLoad` guard alike.
  *
  * Without the search generic an untyped `ctx.search` stays `any` — the
  * default that keeps differently typed levels assignable to plain
  * `Route`: schema outputs are arbitrary(coerced numbers, defaults, ...),
  * so no single degraded shape is bivariant with all of them. At runtime
  * it holds the raw input object of `parseSearchInput`; see `useSearch`
- * for the typed degraded shape.
+ * for the typed degraded shape. Prefer {@link createRoutes}: its
+ * returned table derives every level's `ctx.search` from the level's own
+ * schema(see {@link SearchRoutesOf}), so the manual generic is only
+ * needed for hand-annotated route objects.
  * `children` accepts `Route<any, any>` so levels with different patterns
  * and search shapes nest without variance conflicts.
  * @group Types
@@ -124,8 +131,18 @@ export type Route<P extends string = string, S = any> = Omit<
      */
     pendingComponent?: ComponentType;
   }>,
-  'path' | 'children'
+  'path' | 'children' | 'beforeLoad'
 > & {
+  /**
+   * Route guard inherited from `BaseRoute`, re-typed by the search
+   * generic: `ctx.search` is `S`(`any` by default — see the Route doc
+   * above). At runtime it holds the level's parsed search — the schema
+   * output, or the degraded input without a schema. The guard context
+   * types `router` as `RouterInstance<any>`: a precise
+   * `RouterInstance<Route>` here would recurse into `Route`'s own
+   * members and break `Route`'s assignability to plain `BaseRoute`.
+   */
+  beforeLoad?(ctx: GuardContext<any, S>): Awaitable<string | void>;
   /** Path pattern; params of the contexts above are inferred from it. */
   path?: P;
   /**
@@ -141,6 +158,76 @@ export type LoadStatus = {
   key: number;
   status: 'pending' | 'resolved' | 'rejected';
 };
+
+/**
+ * The search a route's `data`/`beforeLoad` contexts receive: the
+ * level's own {@link Route.search search schema} output, or the
+ * degraded {@link SearchInput} when the level declares no schema.
+ * Building block of {@link SearchRoutesOf}.
+ * @group Types
+ * @category Route
+ */
+export type RouteSearchOf<R> = R extends {
+  search: StandardSchemaV1<any, infer Output>;
+}
+  ? Output
+  : SearchInput;
+
+/**
+ * A context with only its `search` member replaced — everything the
+ * callback declared(`params` precision, `signal`, custom shapes)
+ * passes through untouched.
+ * @group Types
+ * @category Route
+ */
+export type WithSearch<C, S> = Omit<C, 'search'> & {search: S};
+
+/**
+ * Re-type a route table so every level's `data` loader and `beforeLoad`
+ * guard derive their `ctx.search` from the level's own
+ * {@link Route.search search schema}: the schema's parsed output(see
+ * {@link RouteSearchOf}) instead of the loose `any`. This is what
+ * {@link createRoutes} returns, closing the type loop — no manual
+ * `Route<P, S>` generics or callback annotations needed for the search
+ * typing.
+ *
+ * Everything else passes through unchanged: `path` literals(so
+ * `RoutePaths<typeof routes>` and `TypedLink` keep working), the
+ * loaders' return types, and the rest of every level's members. A
+ * callback that annotates its ctx with a search shape the schema
+ * contradicts is rejected at the `data`/`beforeLoad` property; an
+ * un-annotated callback written inside the literal is checked loosely
+ * against `Route`(`ctx.search: any` — TypeScript cannot contextually
+ * type a member from sibling properties) and precisely on the returned
+ * table.
+ * @group Types
+ * @category Route
+ */
+export type SearchRoutesOf<T> = T extends readonly (infer _Level)[]
+  ? {-readonly [K in keyof T]: SearchRoutesOf<T[K]>}
+  : T extends Route
+    ? T extends {
+        data?: infer Data;
+        beforeLoad?: infer BeforeLoad;
+        children?: infer Children;
+      }
+      ? Omit<T, 'data' | 'beforeLoad' | 'children'> & {
+          data?: [unknown] extends [Data]
+            ? undefined
+            : Data extends (ctx: infer DataCtx) => infer R
+              ? (ctx: WithSearch<DataCtx, RouteSearchOf<T>>) => R
+              : Data;
+          beforeLoad?: [unknown] extends [BeforeLoad]
+            ? undefined
+            : BeforeLoad extends (ctx: infer GuardCtx) => infer R
+              ? (ctx: WithSearch<GuardCtx, RouteSearchOf<T>>) => R
+              : BeforeLoad;
+          children?: [unknown] extends [Children]
+            ? undefined
+            : SearchRoutesOf<Children>;
+        }
+      : T
+    : T;
 
 /**
  * Union of every navigable path pattern of a route table, computed from

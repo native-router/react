@@ -74,7 +74,8 @@ function Preview({visible}: {visible: boolean}) {
 - `NavLink` with `isActive`/`isExactActive`, `end`, `caseSensitive` and `aria-current` (defaults to `"page"`); `className`/`style`/`children` accept `({isActive, isExactActive})` callbacks; `to="/"` is active for every path
 - Polymorphic links: every link component takes an `as` component — own props flattened and type-checked on the link, colliding props through the `asProps` escape hatch, `href`/`onClick`/`aria-current` injected, `ref` forwarded
 - `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
-- Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — loaders receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
+- Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — `data` loaders and `beforeLoad` guards receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
+- Search type closure: `createRoutes(routes)` re-types the returned table so every level's `data`/`beforeLoad` `ctx.search` derives from the level's own schema — no `Route<P, S>` generics or callback annotations needed; an explicit `Route<P, S>` generic still wins wherever written
 - Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
@@ -259,11 +260,12 @@ import {ScrollRestoration} from '@native-router/react';
 
 On mount it also sets `history.scrollRestoration` to `manual`: the browser's own `auto` restoration would race the component's restore and pre-scroll while the left entry's offset is still being read, so the component owns scroll restoration for the session (the setting is not reverted on unmount).
 
-Validate and type the search with a schema — any zod/valibot/arktype schema works, the router only speaks [Standard Schema](https://standardschema.dev). Declare it once on the route and the search is parsed during resolve: the `data` loader receives a typed `ctx.search` (coerced numbers, defaults applied), and an invalid search fails the level through the existing error layers — the route `errorComponent`, else the global `errorHandler`.
+Validate and type the search with a schema — any zod/valibot/arktype schema works, the router only speaks [Standard Schema](https://standardschema.dev). Declare it once on the route and the search is parsed during resolve: the `data` loader and the `beforeLoad` guard receive a typed `ctx.search` (coerced numbers, defaults applied), and an invalid search fails the level through the existing error layers — the route `errorComponent`, else the global `errorHandler`.
+
+Build the table with `createRoutes` and the typing closes by itself: the returned table derives every level's `ctx.search` from the level's own schema, so neither the manual `Route<P, S>` generic nor callback annotations are needed. (Callbacks written inside the literal are checked loosely — `ctx.search: any` — since TypeScript cannot contextually type a member from sibling properties; the precise types hold on the returned table, and a callback annotation that contradicts the schema is rejected at the property.)
 
 ```tsx
-import {useData, useSearch} from '@native-router/react';
-import type {Route} from '@native-router/react';
+import {createRoutes, useData, useSearch} from '@native-router/react';
 import {z} from 'zod';
 
 const listSearch = z.object({
@@ -271,14 +273,19 @@ const listSearch = z.object({
   tag: z.string().optional()
 });
 
-const listRoute = {
-  path: '/articles',
-  search: listSearch,
-  component: () => import('./ArticleList'),
-  // ctx.search: {page: number; tag?: string} — parsed and typed
-  data: ({search}) => fetchArticles(search.page, search.tag),
-  errorComponent: ({error}) => <p>{error.message}</p>
-} as Route<'/articles', {page: number; tag?: string}>;
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  children: [
+    {
+      path: '/articles',
+      search: listSearch,
+      component: () => import('./ArticleList'),
+      // typeof routes → this level's ctx.search: {page: number; tag?: string}
+      data: ({search}) => fetchArticles(search.page, search.tag),
+      errorComponent: ({error}) => <p>{error.message}</p>
+    }
+  ]
+});
 
 function ArticleList() {
   const articles = useData<Article[]>(); // typed, no casts
@@ -286,6 +293,16 @@ function ArticleList() {
   const raw = useSearch(); // degraded raw object: {page: '2'} strings
   // ...
 }
+```
+
+Hand-annotated route objects keep the explicit generic — it wins wherever written:
+
+```tsx
+const listRoute = {
+  path: '/articles',
+  search: listSearch,
+  component: () => import('./ArticleList')
+} as Route<'/articles', {page: number; tag?: string}>;
 ```
 
 `useSearch()` without a schema degrades to the raw input object of `parseSearchInput` (strings; repeated keys are arrays) and needs no schema on the route. Both flavors re-render on every location change, and the schema must validate synchronously.
