@@ -1,15 +1,20 @@
 import {commit, createHref, preload} from '@native-router/core';
 import type {ResolvedEntry} from '@native-router/core';
-import type {LinkProps, Route} from '@@/types';
+import type {AsLinkProps, LinkProps, Route} from '@@/types';
 import {
   createContext,
+  forwardRef,
   MouseEvent,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type ElementType,
+  type ReactElement,
+  type Ref
 } from 'react';
 import {useRouter} from './Router';
 import {shouldNavigate} from './link-behavior';
@@ -26,6 +31,11 @@ export function usePrefetch() {
   return useContext(Context);
 }
 
+type PrefetchLinkImplProps = LinkProps & {
+  as?: ElementType;
+  asProps?: Record<string, unknown>;
+};
+
 /**
  * Link with prefetch support.
  *
@@ -35,15 +45,26 @@ export function usePrefetch() {
  * - `'viewport'`: prefetch when the link scrolls into the viewport.
  * - `'none'`: never prefetch; the target is resolved on click.
  *
+ * Pass an `as` component to render through it instead of the plain anchor
+ * (see {@link AsLinkProps}); every strategy keeps working. The `viewport`
+ * strategy observes the DOM node the component forwards its ref to, so a
+ * component that does not forward the ref down to a DOM element never
+ * triggers a viewport prefetch.
  * @param props
  * @group Components
  */
-export default function PrefetchLink({
-  to,
-  prefetch = 'intent',
-  children,
-  ...rest
-}: LinkProps) {
+function PrefetchLinkImpl(
+  {
+    to,
+    prefetch = 'intent',
+    children,
+    as,
+    asProps,
+    onClick,
+    ...rest
+  }: PrefetchLinkImplProps,
+  forwardedRef: Ref<HTMLAnchorElement>
+) {
   const router = useRouter();
   const anchorRef = useRef<HTMLAnchorElement>(null);
   const entryRef = useRef<Promise<ResolvedEntry<ReactNode>> | undefined>(
@@ -53,6 +74,16 @@ export default function PrefetchLink({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
   const [view, setView] = useState<ReactNode>();
+
+  // Feed both the internal viewport-observation ref and the user's ref.
+  const setAnchorRef = useCallback(
+    (node: HTMLAnchorElement | null) => {
+      anchorRef.current = node;
+      if (typeof forwardedRef === 'function') forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    },
+    [forwardedRef]
+  );
 
   function prefetchIt(): Promise<ResolvedEntry<ReactNode>> {
     setLoading(true);
@@ -89,9 +120,21 @@ export default function PrefetchLink({
   }
 
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
+    // The user's onClick runs first with the same event; calling
+    // e.preventDefault() there suppresses the navigation entirely.
+    onClick?.(e);
     // Modified clicks, other buttons and links to another browsing context
     // keep the browser default behavior (open in new tab/window, etc).
-    if (!shouldNavigate(e, rest.target, rest.rel)) return;
+    // asProps overrides the base anchor attributes at runtime, so the guard
+    // judges the effective target/rel — the ones actually rendered.
+    if (
+      !shouldNavigate(
+        e,
+        (asProps?.target as string | undefined) ?? rest.target,
+        (asProps?.rel as string | undefined) ?? rest.rel
+      )
+    )
+      return;
     e.preventDefault();
     // A stored entry that already failed can never be committed
     // successfully, so resolve the target again before committing.
@@ -148,17 +191,33 @@ export default function PrefetchLink({
       ? {onMouseEnter: handlePrefetch, onFocus: handlePrefetch}
       : undefined;
 
+  const A = (as ?? 'a') as ElementType;
+
   return (
     <Context.Provider value={linkContext}>
-      <a
+      <A
         {...rest}
         {...intentHandlers}
-        ref={anchorRef}
+        {...asProps}
+        ref={setAnchorRef}
         href={createHref(router, to)}
         onClick={handleClick}
       >
         {children}
-      </a>
+      </A>
     </Context.Provider>
   );
 }
+
+// Generic first for call sites, plain tail for ComponentProps(see Link).
+const PrefetchLink = forwardRef(PrefetchLinkImpl) as {
+  <A extends ElementType = 'a'>(
+    props: AsLinkProps<LinkProps, A>
+  ): ReactElement | null;
+  (props: LinkProps): ReactElement | null;
+  displayName?: string;
+};
+
+PrefetchLink.displayName = 'PrefetchLink';
+
+export default PrefetchLink;

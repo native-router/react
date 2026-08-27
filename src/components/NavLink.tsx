@@ -1,9 +1,24 @@
 import {toLocation} from '@native-router/core';
-import type {NavLinkProps, NavLinkState} from '@@/types';
-import {useCallback} from 'react';
+import type {AsLinkProps, NavLinkProps, NavLinkState} from '@@/types';
+import {
+  forwardRef,
+  useCallback,
+  type ElementType,
+  type ReactElement,
+  type Ref
+} from 'react';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
 import {useRouter} from './Router';
 import Link from './Link';
+
+type NavLinkImplProps = NavLinkProps & {
+  as?: ElementType;
+  asProps?: Record<string, unknown>;
+};
+
+// Internal delegation to Link with the implementation-loose `as` shape;
+// the public generic typing lives on both components' public signatures.
+const LooseLink = Link as (props: any) => ReactElement | null;
 
 /**
  * Link that knows whether its target matches the current location.
@@ -22,19 +37,29 @@ import Link from './Link';
  * `className`/`style`/`children` receive the active state when given as
  * functions. Click behavior is delegated to {@link Link}, inheriting the
  * modified-click guard and the double-click lock.
+ *
+ * Pass an `as` component to render through it instead of the plain anchor
+ * (see {@link AsLinkProps}): the active-state callbacks, the computed
+ * `className`/`style` and the injected `aria-current` flow to it like any
+ * other prop.
  * @param props
  * @group Components
  */
-export default function NavLink({
-  to,
-  end = false,
-  caseSensitive = false,
-  className,
-  style,
-  ariaCurrent,
-  children,
-  ...rest
-}: NavLinkProps) {
+function NavLinkImpl(
+  {
+    to,
+    end = false,
+    caseSensitive = false,
+    className,
+    style,
+    ariaCurrent,
+    children,
+    as,
+    asProps,
+    ...rest
+  }: NavLinkImplProps,
+  ref: Ref<HTMLAnchorElement>
+) {
   const router = useRouter();
   // Subscribe to the history location so the active state stays in sync even
   // when rendered outside the routed view(e.g. a nav bar beside <View />).
@@ -65,14 +90,30 @@ export default function NavLink({
   const state: NavLinkState = {isActive, isExactActive};
 
   return (
-    <Link
+    <LooseLink
       to={to}
       {...rest}
+      as={as}
+      asProps={asProps}
+      ref={ref}
       className={typeof className === 'function' ? className(state) : className}
       style={typeof style === 'function' ? style(state) : style}
       aria-current={isActive ? (ariaCurrent ?? 'page') : undefined}
     >
       {typeof children === 'function' ? children(state) : children}
-    </Link>
+    </LooseLink>
   );
 }
+
+// Generic first for call sites, plain tail for ComponentProps(see Link).
+const NavLink = forwardRef(NavLinkImpl) as {
+  <A extends ElementType = 'a'>(
+    props: AsLinkProps<NavLinkProps, A>
+  ): ReactElement | null;
+  (props: NavLinkProps): ReactElement | null;
+  displayName?: string;
+};
+
+NavLink.displayName = 'NavLink';
+
+export default NavLink;

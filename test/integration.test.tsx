@@ -43,6 +43,7 @@ import {
   createRouter,
   createRoutes,
   defaultResolveView,
+  useBlocker,
   useData,
   useLoading,
   useNamedData,
@@ -91,6 +92,21 @@ function A() {
 function B() {
   return <h1>B</h1>;
 }
+
+// A design-system-style link for the `as` tests: own props plus anchor
+// attributes, forwardRef and rest 透传 — the documented component contract.
+type PillProps = {
+  variant: 'primary' | 'ghost';
+  tone?: 'strong';
+} & React.AnchorHTMLAttributes<HTMLAnchorElement>;
+
+const PillLink = React.forwardRef<HTMLAnchorElement, PillProps>(
+  function PillLink({variant, tone, ...rest}, ref) {
+    // Children arrive through the rest spread.
+    // eslint-disable-next-line jsx-a11y/anchor-has-content
+    return <a ref={ref} data-variant={variant} data-tone={tone} {...rest} />;
+  }
+);
 
 function Login() {
   return <h1>Login</h1>;
@@ -870,6 +886,54 @@ describe('NavLink', () => {
     expect((screen.getByText('Root') as HTMLAnchorElement).style.top).toBe(
       '1px'
     );
+  });
+
+  it('should render through an as component and inject the active state into it', async () => {
+    const routes: Route[] = [
+      {path: '/', component: () => Home},
+      {path: '/users', component: () => A}
+    ];
+    const router = createRouter(
+      routes,
+      createMemoryHistory({initialEntries: ['/']})
+    );
+    render(
+      <Router router={router}>
+        <NavLink
+          as={PillLink}
+          to="/users"
+          variant="primary"
+          className={({isActive}) =>
+            isActive ? 'nav-link active' : 'nav-link'
+          }
+          // The types reject managed keys in asProps; the cast reaches them
+          // anyway to prove the runtime backstop — the injected active-state
+          // aria-current wins even for untyped callers.
+          asProps={{'aria-current': 'step'} as never}
+        >
+          Users
+        </NavLink>
+        <View />
+      </Router>
+    );
+    await flush();
+    const el = screen.getByText('Users') as HTMLAnchorElement;
+    // The flattened `as` prop reached the component; nothing is active at '/'.
+    expect(el.getAttribute('data-variant')).toBe('primary');
+    expect(el.getAttribute('aria-current')).toBe(null);
+    expect(el.className).toBe('nav-link');
+
+    // The click navigates in-app and the injected aria-current lands on the
+    // as component's DOM node — the asProps 'step' above did NOT override
+    // it(managed key, injected after asProps).
+    await act(async () => {
+      fireEvent.click(el);
+    });
+    await flush();
+    expect(screen.getByText('A')).toBeDefined();
+    expect(el.getAttribute('aria-current')).toBe('page');
+    expect(el.className).toBe('nav-link active');
+    expect(el.getAttribute('data-variant')).toBe('primary');
   });
 });
 
@@ -1662,6 +1726,42 @@ describe('TypedLink', () => {
     expect(screen.queryByText('Page')).toBeNull();
   });
 
+  it('should keep params interpolation and click navigation through an as component', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <TypedLink<Paths, typeof PillLink>
+          to="/users/:id"
+          params={{id: '7'}}
+          as={PillLink}
+          variant="primary"
+          tone="strong"
+          data-testid="pill-link"
+        >
+          User7
+        </TypedLink>
+        <View />
+      </Router>
+    );
+    await flush();
+    const el = screen.getByTestId('pill-link') as HTMLAnchorElement;
+    // The interpolated href and the flattened `as` props both arrived.
+    expect(el.getAttribute('href')).toBe('/users/7');
+    expect(el.getAttribute('data-variant')).toBe('primary');
+    expect(el.getAttribute('data-tone')).toBe('strong');
+
+    fireEvent.click(el);
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(history.location.pathname).toBe('/users/7');
+
+    // Modified clicks keep the browser default through the as component too.
+    fireEvent.click(el, {ctrlKey: true});
+    await flush();
+    expect(history.location.pathname).toBe('/users/7');
+  });
+
   it('should throw on click when a required param is missing (runtime backstop)', async () => {
     // The type-level check flags this at compile time; the runtime guard
     // covers untyped callers — plain TypedLink with a cast bypasses the
@@ -1944,5 +2044,76 @@ describe('render-phase route error boundary', () => {
     // The layout survives; only the failing leaf is replaced
     expect(screen.getByText('Layout')).toBeDefined();
     expect(screen.getByRole('alert').textContent).toBe('leaf:boom crashed');
+  });
+});
+
+describe('useBlocker', () => {
+  function setup(initialEntries: string[]) {
+    const history = createMemoryHistory({initialEntries});
+    const router = createRouter(
+      {path: '', children: [{path: '/a'}, {path: '/b'}]},
+      history,
+      {resolveView: (matched) => Promise.resolve(matched.at(-1)!.path)}
+    );
+    return {history, router};
+  }
+
+  it('should block navigation while mounted and release on unmount', async () => {
+    const {history, router} = setup(['/a']);
+    const asks: Array<[string, string]> = [];
+    function Probe() {
+      useBlocker((to, from) => {
+        asks.push([to, from]);
+        return false;
+      });
+      return null;
+    }
+    const {unmount} = render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(asks).toEqual([['/b', '/a']]);
+    expect(history.location.pathname).toBe('/a');
+
+    unmount();
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(history.location.pathname).toBe('/b');
+  });
+
+  it('should always ask the latest predicate after a re-render', async () => {
+    const {history, router} = setup(['/a']);
+    function Probe({allow}: {allow: boolean}) {
+      useBlocker(() => allow);
+      return null;
+    }
+    const {rerender} = render(
+      <Router router={router}>
+        <Probe allow={false} />
+      </Router>
+    );
+
+    // The mount-time closure vetoes everything.
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(history.location.pathname).toBe('/a');
+
+    // A plain re-render — no re-registration — swaps in the new closure.
+    rerender(
+      <Router router={router}>
+        <Probe allow />
+      </Router>
+    );
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(history.location.pathname).toBe('/b');
   });
 });

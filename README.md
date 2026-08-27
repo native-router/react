@@ -72,12 +72,13 @@ function Preview({visible}: {visible: boolean}) {
 - Route guards: static `redirect` and async `beforeLoad` on every route level, run shallow → deep; more than 10 chained redirects reject with `RedirectLoopError`
 - Cancelable async navigation: starting a new navigation supersedes the in-flight one; `cancel(router)` aborts it; a history POP cancels it too — and the chain's `AbortSignal` reaches every `data` loader as `ctx.signal` (`fetch(url, {signal: ctx.signal})`), so superseded navigations stop their requests instead of only having results dropped
 - `NavLink` with `isActive`/`isExactActive`, `end`, `caseSensitive` and `aria-current` (defaults to `"page"`); `className`/`style`/`children` accept `({isActive, isExactActive})` callbacks; `to="/"` is active for every path
+- Polymorphic links: every link component takes an `as` component — own props flattened and type-checked on the link, colliding props through the `asProps` escape hatch, `href`/`onClick`/`aria-current` injected, `ref` forwarded
 - `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — loaders receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
 - Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
-- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`
+- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto, registered while the component is mounted and always asked through the latest closure)
 - Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
 - Route-level `pendingComponent` skeleton, shown only when no previous view can be retained (cold start, refresh, re-navigation after an error); the nearest matched ancestor's wins, and in-app navigation keeps the previous view instead
   - Keeping the previous view during in-app navigation is an intentional design following browser-native semantics — see the Design Principles section of the core repository's README
@@ -102,7 +103,42 @@ function Preview({visible}: {visible: boolean}) {
 - `rel` containing `external`
 - events already `defaultPrevented`
 
-While a navigation started by a link is pending, further clicks on that link are ignored.
+A user-provided `onClick` runs first with the same event; calling `e.preventDefault()` there suppresses the navigation entirely. While a navigation started by a link is pending, further clicks on that link are ignored.
+
+## Rendering through your own component (`as`)
+
+`Link`, `NavLink`, `PrefetchLink` and `TypedLink` accept an `as` component: the link renders through it instead of the plain `<a>`, so a design-system link gets SPA navigation, active state and prefetch in one line:
+
+```tsx
+import {NavLink} from '@native-router/react';
+import {NavLink as HazeNavLink} from 'haze-ui';
+
+<NavLink as={HazeNavLink} to="/help" variant="primary">
+  Help
+</NavLink>
+```
+
+The contract for the `as` component:
+
+- **Forward its ref and spread the rest props** onto the DOM element it renders — everything below depends on it (`href`, the composed `onClick` and `aria-current` must reach the DOM).
+- **Own props land directly on the link** (`variant` above): props that do not collide with the link's own props are flattened and checked by TypeScript — required props stay required, invalid values are compile errors.
+- **Colliding props go through `asProps`**: only keys the component shares with the link's base props (anchor attributes such as `title`/`target`) are accepted there, and they are spread last, explicitly overriding the base value. With no shared keys the prop degrades to `{}` — no ambiguity.
+
+The navigation semantics stay owned by the link: `href` is always the computed target of `to`, the click handling is always the composed one (user `onClick` → interception guard → in-app navigation) and `NavLink`'s `aria-current` is always its active-state value — none of them can be overridden, not even through `asProps`. The `ref` is the `as` component's own, so a component that is not wrapped in `forwardRef` rejects `ref` at compile time.
+
+`TypedLink` composes with `as` on top of its pattern narrowing — give both type arguments, since a partial instantiation does not infer the remaining one:
+
+```tsx
+<TypedLink<RoutePaths<typeof routes>, typeof HazeNavLink>
+  to="/users/:id"
+  params={{id: '7'}}
+  variant="primary"
+>
+  User 7
+</TypedLink>
+```
+
+`PrefetchLink`'s strategies keep working through the `as` component; the `viewport` strategy observes the DOM node the component forwards its ref to, so a component that never forwards the ref down to a DOM element simply never triggers a viewport prefetch.
 
 ## Install
 

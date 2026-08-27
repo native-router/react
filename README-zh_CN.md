@@ -72,12 +72,13 @@ function Preview({visible}: {visible: boolean}) {
 - 路由守卫：每层路由支持静态 `redirect` 与异步 `beforeLoad`，按浅层到深层执行；连续重定向超过 10 次以 `RedirectLoopError` 拒绝
 - 可取消的异步导航：发起下一次导航会取代进行中的导航；`cancel(router)` 主动中止；history POP 也会取消——同时导航链的 `AbortSignal` 以 `ctx.signal` 传入每个 `data` loader（`fetch(url, {signal: ctx.signal})`），被取代的导航真正停止请求而非仅丢弃结果
 - `NavLink`：`isActive`/`isExactActive`、`end`、`caseSensitive` 与 `aria-current`（默认 `"page"`）；`className`/`style`/`children` 支持 `({isActive, isExactActive})` 回调；`to="/"` 对所有路径都是激活态
+- 多态链接：四个 Link 组件都接受 `as` 组件——组件自有 props 摊平到链接上并做类型检查，冲突 props 走 `asProps` 逃生舱，`href`/`onClick`/`aria-current` 由链接注入，`ref` 透传
 - `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——loader 拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
 - 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
-- Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`
+- Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决，组件挂载期间注册、始终以最新闭包被询问）
 - 两层错误处理、两个阶段：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）——`errorComponent` 既渲染 resolve 期失败（loader/守卫/search，无 `ctx.phase`），也渲染组件子树的渲染期抛错（`ctx.phase === 'render'`，由路由级错误边界捕获，渲染崩溃不会越过路由炸到 React 根，正如浏览器对任何加载失败都有错误页）
 - 路由级 `pendingComponent` 骨架屏：仅当没有可保留的旧视图时（冷启动、刷新、错误后的重新导航）渲染，取匹配链上最近祖先的；应用内导航依旧保留旧视图，不会闪骨架屏
   - 应用内导航保留旧视图是浏览器原生语义的有意设计，见 core 仓库 README 的设计原则章节
@@ -102,7 +103,42 @@ function Preview({visible}: {visible: boolean}) {
 - `rel` 含 `external`
 - 已被 `defaultPrevented` 的事件
 
-链接发起的导航进行中时，该链接上的后续点击会被忽略。
+用户传入的 `onClick` 先行执行（收到同一事件），在其中调用 `e.preventDefault()` 即完全取消导航。链接发起的导航进行中时，该链接上的后续点击会被忽略。
+
+## 用自己的组件渲染（`as`）
+
+`Link`、`NavLink`、`PrefetchLink` 与 `TypedLink` 都接受 `as` 组件：链接改用它渲染而不是裸 `<a>`，设计系统的链接组件一行即可获得 SPA 导航、激活态与预取：
+
+```tsx
+import {NavLink} from '@native-router/react';
+import {NavLink as HazeNavLink} from 'haze-ui';
+
+<NavLink as={HazeNavLink} to="/help" variant="primary">
+  Help
+</NavLink>
+```
+
+对 `as` 组件的契约：
+
+- **转发 ref 并把 rest props 透传**到它渲染的 DOM 元素上——下面的一切都依赖它（`href`、组合后的 `onClick` 与 `aria-current` 必须到达 DOM）。
+- **组件自有 props 直接写在链接上**（如上面的 `variant`）：与链接自身 props 不冲突的 props 会被摊平进来并做 TypeScript 检查——必填 props 保持必填，非法取值是编译错误。
+- **冲突 props 走 `asProps`**：只接受组件与链接基础 props 共有的键（如 `title`/`target` 这类锚点属性），且在运行时最后展开、显式覆盖基础值。没有共有键时该 prop 退化为 `{}`——没有歧义。
+
+导航语义始终由链接掌管：`href` 永远是 `to` 计算出的目标，点击处理永远是组合后的那套（用户 `onClick` → 拦截守卫 → 应用内导航），`NavLink` 的 `aria-current` 永远是其激活态值——它们不可被覆盖，`asProps` 也不行。`ref` 是 `as` 组件自己的：未用 `forwardRef` 包裹的组件在编译期就会拒绝 `ref`。
+
+`TypedLink` 在模式收窄之上叠加 `as`——两个类型参数都要显式给出，部分实例化不会推断剩下的那个：
+
+```tsx
+<TypedLink<RoutePaths<typeof routes>, typeof HazeNavLink>
+  to="/users/:id"
+  params={{id: '7'}}
+  variant="primary"
+>
+  User 7
+</TypedLink>
+```
+
+`PrefetchLink` 的预取策略在 `as` 组件下全部可用；`viewport` 策略观察的是组件转发 ref 的那个 DOM 节点，若组件从不把 ref 透传到 DOM 元素，viewport 预取自然不会触发。
 
 ## 安装
 

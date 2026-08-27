@@ -14,6 +14,7 @@ export {
   useMatched
 } from './context';
 export {useSearchParams, useSearch, useSetSearch} from './use-search-params';
+export {useBlocker} from './use-blocker';
 export {default as defaultResolveView} from './resolve-view';
 export * from './types';
 

@@ -9,9 +9,25 @@
  *
  * 归并建议：后续路由表类型工具的用例继续追加到本文件。
  */
+import {createRef, forwardRef} from 'react';
+import type {AnchorHTMLAttributes, ComponentProps} from 'react';
 import {describe, expectTypeOf, it} from 'vitest';
-import {MemoryRouter, TypedLink, View, createRoutes} from '../src/index';
-import type {Route, RoutePaths} from '../src/types';
+import {
+  Link,
+  MemoryRouter,
+  NavLink,
+  PrefetchLink,
+  TypedLink,
+  View,
+  createRoutes
+} from '../src/index';
+import type {
+  LinkProps,
+  NavLinkProps,
+  Route,
+  RoutePaths,
+  TypedLinkProps
+} from '../src/types';
 
 function Page() {
   return <div>Page</div>;
@@ -120,5 +136,160 @@ describe('TypedLink', () => {
       // @ts-expect-error wildcard params are string arrays
       params={{rest: 'a'}}
     />;
+  });
+});
+
+// A design-system-style link: own props + anchor attributes rest-spread,
+// ref-forwarding — the shape `as` components are expected to have.
+type PillProps = {
+  variant: 'primary' | 'ghost';
+  tone?: 'strong';
+} & AnchorHTMLAttributes<HTMLAnchorElement>;
+
+const PillLink = forwardRef<HTMLAnchorElement, PillProps>(
+  function PillLink(props, ref) {
+    // Children arrive through the rest spread.
+    // eslint-disable-next-line jsx-a11y/anchor-has-content
+    return <a ref={ref} data-testid="pill" {...props} />;
+  }
+);
+
+// Not wrapped in forwardRef: must refuse a ref.
+const PlainLink = (props: {variant: 'primary'}) => (
+  <span data-variant={props.variant} />
+);
+
+// A link-family `as` component carrying its OWN `params` prop(UI libraries
+// do this): the link's `params` — a key of only one member of the
+// TypedLinkProps union — must own the key, the component's shape must not
+// leak into the flattened region or asProps. Only referenced as a type
+// here — the runtime shape is irrelevant to the type-level assertions.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const ParamsPillLink = forwardRef<
+  HTMLAnchorElement,
+  PillProps & {params?: {x: number}}
+>(function ParamsPillLink(props, ref) {
+  // Children arrive through the rest spread.
+  const anchorProps = props as AnchorHTMLAttributes<HTMLAnchorElement>;
+  // eslint-disable-next-line jsx-a11y/anchor-has-content
+  return <a ref={ref} {...anchorProps} />;
+});
+
+describe('Link family `as` polymorphism', () => {
+  type Paths = '/' | '/users/:id';
+
+  it('should flatten the as component non-conflicting props', () => {
+    const el = (
+      <Link as={PillLink} to="/users" variant="primary" tone="strong" />
+    );
+    expectTypeOf(el).not.toBeNever();
+  });
+
+  it('should require the as component required props and check values', () => {
+    // @ts-expect-error variant is required by PillLink
+    <Link as={PillLink} to="/users" />;
+    <Link as={PillLink} to="/users" variant="ghost" />;
+    // @ts-expect-error 'nope' is not a PillLink variant
+    <Link as={PillLink} to="/users" variant="nope" />;
+  });
+
+  it('should restrict asProps to the keys shared with the base props', () => {
+    <Link
+      as={PillLink}
+      to="/users"
+      variant="primary"
+      asProps={{target: '_blank'}}
+    />;
+    // The managed keys are rejected even though they are shared: href,
+    // onClick and aria-current are always the link's own injections.
+    // @ts-expect-error href is managed by the link, not settable via asProps
+    <Link as={PillLink} to="/users" variant="primary" asProps={{href: '/x'}} />;
+    // @ts-expect-error tone is not shared with the base props
+    <Link
+      as={PillLink}
+      to="/users"
+      variant="primary"
+      asProps={{tone: 'strong'}}
+    />;
+    // @ts-expect-error target must stay a valid anchor target
+    <Link as={PillLink} to="/users" variant="primary" asProps={{target: 1}} />;
+  });
+
+  it('should type the ref after the as component and refuse non-ref components', () => {
+    const anchorRef = createRef<HTMLAnchorElement>();
+    <Link as={PillLink} to="/users" variant="primary" ref={anchorRef} />;
+    // @ts-expect-error PlainLink does not take a ref (no forwardRef)
+    <Link as={PlainLink} to="/users" variant="primary" ref={anchorRef} />;
+  });
+
+  it('should accept as on NavLink and PrefetchLink', () => {
+    <NavLink as={PillLink} to="/users" variant="primary" end />;
+    <PrefetchLink
+      as={PillLink}
+      to="/users"
+      variant="primary"
+      prefetch="render"
+    />;
+  });
+
+  it('should keep the TypedLink discriminated union under an as component', () => {
+    <TypedLink<Paths, typeof PillLink>
+      to="/users/:id"
+      params={{id: '7'}}
+      variant="primary"
+    />;
+    <TypedLink<Paths, typeof PillLink> to="/" variant="ghost" />;
+    // @ts-expect-error params are still required for '/users/:id'
+    <TypedLink<Paths, typeof PillLink> to="/users/:id" variant="primary" />;
+    // @ts-expect-error a path outside the table is still rejected
+    <TypedLink<Paths, typeof PillLink> to="/help" variant="primary" />;
+    // Partial instantiation does not infer the remaining type argument
+    // (the 'a' default would apply), so both must be given explicitly.
+    // @ts-expect-error PillLink is not assignable to the defaulted 'a'
+    <TypedLink<Paths> to="/users/:id" params={{id: '7'}} as={PillLink} />;
+  });
+
+  it('should let the link own params over an as component carrying its own', () => {
+    // The link's params(the union member's pattern params) governs —
+    // ParamsPillLink's own `{x?: number}` shape neither intersects nor
+    // blocks the call.
+    <TypedLink<Paths, typeof ParamsPillLink>
+      to="/users/:id"
+      params={{id: '7'}}
+      variant="primary"
+    />;
+    // The link's params type is the only one checked: the component's
+    // `x` is not a pattern param of '/users/:id'.
+    <TypedLink<Paths, typeof ParamsPillLink>
+      to="/users/:id"
+      // @ts-expect-error x is ParamsPillLink's own param, not the pattern's
+      params={{id: '7', x: 1}}
+      variant="primary"
+    />;
+    // And there is no asProps route around the collision either.
+    <TypedLink<Paths, typeof ParamsPillLink>
+      to="/"
+      variant="primary"
+      // @ts-expect-error params is owned by the link, not settable via asProps
+      asProps={{params: {x: 1}}}
+    />;
+  });
+});
+
+// 来源：原 test/component-props.test.tsx（本 patch 新建后按仓库测试组织
+// 规范并入——纯类型断言属本文件既定范畴）。
+describe('ComponentProps regression', () => {
+  it('should keep ComponentProps readable and ref optional', () => {
+    // Generic signatures collapse to their constraint when read
+    // uninstantiated through ComponentProps; the plain tail overloads keep
+    // the pre-`as` shapes (constructible without a ref).
+    const linkProps: ComponentProps<typeof Link> = {to: '/x'};
+    const navProps: ComponentProps<typeof NavLink> = {to: '/x'};
+    const prefetchProps: ComponentProps<typeof PrefetchLink> = {to: '/x'};
+    const typedProps: ComponentProps<typeof TypedLink> = {to: '/x'};
+    expectTypeOf(linkProps).toExtend<LinkProps>();
+    expectTypeOf(navProps).toExtend<NavLinkProps>();
+    expectTypeOf(prefetchProps).toExtend<LinkProps>();
+    expectTypeOf(typedProps).toExtend<TypedLinkProps>();
   });
 });

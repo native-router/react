@@ -882,6 +882,151 @@ describe('Link navigation guard', () => {
   });
 });
 
+// A design-system-style link for the `as` tests: own props plus anchor
+// attributes, forwardRef and rest 透传 — the documented component contract.
+type PillProps = {
+  variant: 'primary' | 'ghost';
+  tone?: 'strong';
+} & React.AnchorHTMLAttributes<HTMLAnchorElement>;
+
+const PillLink = React.forwardRef<HTMLAnchorElement, PillProps>(
+  function PillLink({variant, tone, ...rest}, ref) {
+    // Children arrive through the rest spread.
+    // eslint-disable-next-line jsx-a11y/anchor-has-content
+    return <a ref={ref} data-variant={variant} data-tone={tone} {...rest} />;
+  }
+);
+
+describe('Link as polymorphism', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The real navigate() returns a promise; the module mock returns undefined.
+    vi.mocked(navigate).mockReset().mockResolvedValue(undefined);
+  });
+
+  function renderAsLink(extra?: Record<string, unknown>) {
+    render(
+      <Router router={createMockRouter()}>
+        {/* The extra props are test-local; cast keeps the helper call sites terse. */}
+        <Link as={PillLink} to="/test" variant="primary" {...(extra as any)}>
+          Go
+        </Link>
+      </Router>
+    );
+    return screen.getByText('Go') as HTMLAnchorElement;
+  }
+
+  it('should render through the as component with the injected href and flattened props', () => {
+    const el = renderAsLink({tone: 'strong'});
+    expect(el.getAttribute('data-variant')).toBe('primary');
+    expect(el.getAttribute('data-tone')).toBe('strong');
+    // href is injected by Link (the mocked createHref returns '/test').
+    expect(el.getAttribute('href')).toBe('/test');
+  });
+
+  it('should navigate in-app on a plain click through the as component', () => {
+    const el = renderAsLink();
+    // preventDefault is called for in-app navigation.
+    expect(fireEvent.click(el)).toBe(false);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith(expect.anything(), '/test');
+  });
+
+  it('should keep the browser default for modified clicks', () => {
+    const el = renderAsLink();
+    expect(fireEvent.click(el, {ctrlKey: true})).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('should run the user onClick first with the same event', () => {
+    const plain = vi.fn();
+    const el = renderAsLink({onClick: plain});
+    fireEvent.click(el);
+    // Same event, same args — the user handler strictly before navigate —
+    // and the navigation still happens.
+    expect(plain).toHaveBeenCalledWith(
+      expect.objectContaining({type: 'click'})
+    );
+    expect(plain.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(navigate).mock.invocationCallOrder[0]
+    );
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('should let a preventDefaulted user onClick veto the navigation', () => {
+    const veto = vi.fn((e: {preventDefault: () => void}) => {
+      e.preventDefault();
+    });
+    const el = renderAsLink({onClick: veto});
+    fireEvent.click(el);
+    expect(veto).toHaveBeenCalledTimes(1);
+    // A preventDefaulted user onClick suppresses the navigation entirely.
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('should spread asProps after the base props and keep the injected keys managed', () => {
+    const el = renderAsLink({
+      title: 'from-base',
+      asProps: {title: 'from-asProps', href: '/overridden'}
+    });
+    // asProps wins over the same base prop(explicit override)...
+    expect(el.getAttribute('title')).toBe('from-asProps');
+    // ...but href stays managed by the link.
+    expect(el.getAttribute('href')).toBe('/test');
+  });
+
+  it('should forward the ref to the as component element', () => {
+    const nodes: (HTMLAnchorElement | null)[] = [];
+    render(
+      <Router router={createMockRouter()}>
+        <Link
+          as={PillLink}
+          to="/test"
+          variant="primary"
+          ref={(node) => {
+            nodes.push(node);
+          }}
+        >
+          Go
+        </Link>
+      </Router>
+    );
+    expect(nodes.at(-1)).toBeInstanceOf(HTMLAnchorElement);
+    expect(nodes.at(-1)!.dataset.variant).toBe('primary');
+  });
+
+  it('should keep PrefetchLink strategies working through the as component', async () => {
+    vi.mocked(commit).mockResolvedValue(undefined);
+    render(
+      <Router router={createMockRouter()}>
+        <PrefetchLink
+          as={PillLink}
+          to="/test"
+          variant="ghost"
+          prefetch="render"
+          title="from-base"
+          asProps={{title: 'from-asProps'}}
+        >
+          Go
+        </PrefetchLink>
+      </Router>
+    );
+    // 'render' prefetched on mount without any interaction.
+    expect(preload).toHaveBeenCalledTimes(1);
+    const el = screen.getByText('Go') as HTMLAnchorElement;
+    expect(el.getAttribute('data-variant')).toBe('ghost');
+    // PrefetchLink has its own spread sequence(rest, intent handlers,
+    // asProps, managed keys) — the asProps override wins over the base
+    // value while href stays managed by the link.
+    expect(el.getAttribute('title')).toBe('from-asProps');
+    expect(el.getAttribute('href')).toBe('/test');
+    await act(async () => {
+      fireEvent.click(el);
+    });
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Route path param types', () => {
   it('should type ctx.params of a required param path', () => {
     const route: Route<'/users/:id'> = {

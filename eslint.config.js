@@ -76,6 +76,8 @@ export default [
       // react-19-only APIs, so the modern-style suggestions do not apply.
       '@eslint-react/no-use-context': 'off',
       '@eslint-react/no-context-provider': 'off',
+      // Same for ref-as-prop: react 17/18 need forwardRef to receive refs.
+      '@eslint-react/no-forward-ref': 'off',
       // Duplicate of react-hooks/exhaustive-deps(the dedicated plugin's
       // report is the authoritative one).
       '@eslint-react/exhaustive-deps': 'off',

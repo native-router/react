@@ -1,8 +1,11 @@
 import type {
   AnchorHTMLAttributes,
+  ComponentPropsWithRef,
+  ComponentPropsWithoutRef,
   ComponentType,
   CSSProperties,
   DetailedHTMLProps,
+  ElementType,
   ReactNode
 } from 'react';
 import type {
@@ -244,6 +247,85 @@ export type LinkProps = {
   HTMLAnchorElement
 >;
 
+/**
+ * Keys owned by the link components themselves when rendering through an
+ * `as` component: the injection surface(`href`, the composed `onClick`,
+ * NavLink's `aria-current`) plus React's reserved keys and the polymorphism
+ * props' own names. They are stripped from the flattened `as`-props region
+ * and from `asProps`, so a same-named prop of the `as` component can never
+ * interfere with the navigation semantics.
+ */
+type AsManagedKeys =
+  'as' | 'asProps' | 'ref' | 'key' | 'href' | 'onClick' | 'aria-current';
+
+/**
+ * Union-preserving `Omit`: the built-in collapses unions(`Omit<A | B, K>`
+ * picks across the members), which would flatten the discriminated union
+ * of {@link TypedLinkProps}.
+ */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+/**
+ * Union of every key appearing on any member: `keyof (A | B)` intersects
+ * the members' keys, so a key living on only part of a union(`params` on
+ * {@link TypedLinkProps}) would escape an `Omit` keyed on plain `keyof`.
+ */
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+
+/**
+ * The `ref` an `as` component accepts — `{ref?: never}` when it does not
+ * take one(i.e. is not wrapped in `forwardRef`), so passing a ref to such
+ * a component is a compile error. The detection relies on how
+ * `ComponentPropsWithRef` is typed: guaranteed under `@types/react` ≥ 19;
+ * under `@types/react` 18 it always includes `ref`, so the guard degrades
+ * to accepting the ref(and React warns at runtime that it is dropped).
+ */
+type AsRefProps<A extends ElementType> =
+  'ref' extends keyof ComponentPropsWithRef<A>
+    ? Pick<ComponentPropsWithRef<A>, 'ref'>
+    : {ref?: never};
+
+/**
+ * Props of the link family({@link Link}, {@link NavLink},
+ * {@link PrefetchLink}, {@link TypedLink}) when rendering through a custom
+ * `as` component. Three regions, no ambiguity:
+ *
+ * 1. The component's own props(`Base`: `to`, anchor attributes, NavLink's
+ *    active-state callbacks, ...) minus its anchor `ref`.
+ * 2. The flattened `as`-props region: every prop of the `as` component
+ *    that does not collide with `Base`(`variant`, `tone`, ...) is accepted
+ *    directly on the link. A key appearing on any member of a union
+ *    `Base` counts as colliding(`params` on {@link TypedLinkProps} is
+ *    owned by the link, never by the `as` component).
+ * 3. The `asProps` escape hatch for the colliding keys: only the props the
+ *    `as` component shares with `Base`(`title`, `target`, ...) may be set
+ *    there — `Pick` degrades to `{}` when there is no overlap — minus the
+ *    managed keys(see {@link AsManagedKeys}), and it is spread last at
+ *    runtime, explicitly overriding the base value.
+ *
+ * `href`, the composed `onClick` and NavLink's `aria-current` are always
+ * injected by the link itself(see {@link AsManagedKeys}) and win over
+ * everything else — neither the flattened region nor `asProps` can set
+ * them; the `ref` is the `as` component's own, so it must be
+ * ref-forwarding for `ref` to type-check.
+ * @group Types
+ * @category Link
+ */
+export type AsLinkProps<Base, A extends ElementType> = {
+  as?: A;
+  asProps?: Omit<
+    Pick<
+      ComponentPropsWithoutRef<A>,
+      keyof Base & keyof ComponentPropsWithoutRef<A>
+    >,
+    AsManagedKeys
+  >;
+} & DistributiveOmit<Base, 'ref'> &
+  Omit<ComponentPropsWithoutRef<A>, KeysOfUnion<Base> | AsManagedKeys> &
+  AsRefProps<A>;
+
 export type {
   SearchInput,
   SearchOutputOf,
@@ -276,7 +358,8 @@ export type NavLinkProps = {
   children?: ReactNode | ((state: NavLinkState) => ReactNode);
 } & Omit<
   DetailedHTMLProps<AnchorHTMLAttributes<HTMLAnchorElement>, HTMLAnchorElement>,
-  // Click handling is owned by Link; className/style/children are re-typed
-  // above to accept the active-state callbacks.
-  'className' | 'style' | 'children' | 'onClick'
+  // Click handling is owned by Link(user onClick runs first, then the
+  // navigation decision); className/style/children are re-typed above to
+  // accept the active-state callbacks.
+  'className' | 'style' | 'children'
 >;
