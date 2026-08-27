@@ -203,7 +203,7 @@ export type WithSearch<C, S> = Omit<C, 'search'> & {search: S};
  * @group Types
  * @category Route
  */
-export type SearchRoutesOf<T> = T extends readonly (infer _Level)[]
+export type SearchRoutesOf<T> = T extends readonly unknown[]
   ? {-readonly [K in keyof T]: SearchRoutesOf<T[K]>}
   : T extends Route
     ? T extends {
