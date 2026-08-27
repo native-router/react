@@ -141,6 +141,15 @@ The navigation semantics stay owned by the link: `href` is always the computed t
 
 `PrefetchLink`'s strategies keep working through the `as` component; the `viewport` strategy observes the DOM node the component forwards its ref to, so a component that never forwards the ref down to a DOM element simply never triggers a viewport prefetch.
 
+## Why `useData` is typed manually
+
+`useData<T>()` annotations have no compile-time link to the route's `data` loader — the annotation *is* the contract. That is deliberate. Two closure schemes were evaluated (2026-08) and rejected:
+
+- **A from-argument** (`useData('/articles/:slug')`, indexing a route-table map by path literal — TanStack's `useLoaderData({from})` shape). Rejected: it makes every view aware of the path it happens to be mounted under. Matching data to a view is the route configuration's job; a view should know what it renders, not where it is mounted.
+- **A data-props protocol** — constrain `component` to `ComponentType<{data: D}>` and let `createRoutes` check the loader output against it at the config site. The check lands at the right layer, but deep children would then need prop drilling to reach the data.
+
+What stays: path-agnostic views, no prop drilling, one local annotation. Revisit only if TypeScript or the library later offers a channel that couples neither paths nor props.
+
 ## Install
 
 ```bash

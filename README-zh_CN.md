@@ -141,6 +141,15 @@ import {NavLink as HazeNavLink} from 'haze-ui';
 
 `PrefetchLink` 的预取策略在 `as` 组件下全部可用；`viewport` 策略观察的是组件转发 ref 的那个 DOM 节点，若组件从不把 ref 透传到 DOM 元素，viewport 预取自然不会触发。
 
+## 为什么 `useData` 手动标注类型
+
+`useData<T>()` 的注解与路由 `data` loader 的返回类型没有编译期关联——注解本身就是契约。这是刻意为之。评估过两种闭环方案（2026-08），均被否决：
+
+- **from 参数**（`useData('/articles/:slug')`，按路径字面量索引路由表映射——TanStack `useLoaderData({from})` 的形态）：否决。它迫使每个视图感知自己恰好被挂载到哪个路径下。数据与视图的匹配是路由配置层的职责；视图应该知道「我渲染什么」，而不是「我被挂载在哪」。
+- **data-props 协议**：把 `component` 约束为 `ComponentType<{data: D}>`，由 `createRoutes` 在配置处检查 loader 输出与之匹配。检查点落在了正确的层，但深层子组件此后需要 props 逐层透传才能拿到数据。
+
+保留现状：视图不感知路径、无 props 透传、仅一处局部注解。仅当 TypeScript 或本库日后出现既不耦合路径也不透传 props 的通道时再议。
+
 ## 安装
 
 ```bash
