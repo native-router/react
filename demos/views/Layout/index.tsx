@@ -38,13 +38,13 @@ export default function Layout() {
         modes
         <ul>
           <li>
-            <a href={process.env.BASE_URL}>history</a>
+            <a href={import.meta.env.BASE_URL}>history</a>
           </li>
           <li>
-            <a href={`${process.env.BASE_URL}?hash`}>hash</a>
+            <a href={`${import.meta.env.BASE_URL}?hash`}>hash</a>
           </li>
           <li>
-            <a href={`${process.env.BASE_URL}?memory`}>memory</a>
+            <a href={`${import.meta.env.BASE_URL}?memory`}>memory</a>
           </li>
         </ul>
         <a href="//native-router.github.io/react/">docs</a>

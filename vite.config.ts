@@ -2,7 +2,7 @@ import * as path from 'path';
 import {fileURLToPath} from 'url';
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
-import linaria from '@linaria/vite';
+import linaria from '@wyw-in-js/vite';
 import type {Plugin} from 'vite';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +20,10 @@ export default defineConfig({
         replacement: `${path.join(dirname, 'src/server.tsx')}`
       },
       {
+        find: '@native-router/react/ssr',
+        replacement: `${path.join(dirname, 'src/ssr.tsx')}`
+      },
+      {
         find: '@native-router/react',
         replacement: `${path.join(dirname, 'src/index.tsx')}`
       },
@@ -33,16 +37,15 @@ export default defineConfig({
       }
     ]
   },
-  define: {
-    'process.env.BASE_URL': JSON.stringify(base)
-  },
-  esbuild: false,
+  // `define` is dropped: in vite 8 it no longer applies to dev client modules.
+  // The demos read the base URL from `import.meta.env.BASE_URL` instead.
+  oxc: false,
   build: buildDemo
     ? {
         outDir: 'dist/demos'
       }
     : {
-        target: false, // skip vite:esbuild-transpile
+        target: false, // skip vite:oxc-transpile
         minify: 'terser',
         sourcemap: true,
         lib: {
@@ -50,6 +53,7 @@ export default defineConfig({
           formats: ['es', 'cjs'],
           entry: {
             index: 'src/index.tsx',
+            ssr: 'src/ssr.tsx',
             server: 'src/server.tsx'
           }
         },
@@ -59,7 +63,16 @@ export default defineConfig({
               id.startsWith('.') ||
               id.startsWith('@@/') ||
               id.startsWith(`${dirname}/src`)
-            )
+            ),
+          output: {
+            // Preserve the source tree as one file per module instead of
+            // pre-bundling into shared hash chunks. A downstream bundler can
+            // then tree-shake per module(`sideEffects:false`). Without this,
+            // Rollup hoists code shared by the `index`/`ssr`/`server` entries
+            // into a single hashed chunk that imports everything together.
+            preserveModules: true,
+            preserveModulesRoot: 'src'
+          }
         }
       },
   server: {
@@ -91,11 +104,13 @@ function ssr(): Plugin {
         ) {
           res.statusCode = 200;
           res.setHeader('Content-Type', 'text/html');
+          // dev SSR serves the demo at vite's base ('/' when SSR=true), so the
+          // router's baseUrl is the base minus its trailing slash — same rule
+          // the client entry derives from import.meta.env.BASE_URL
+          const baseUrl = server.config.base.slice(0, -1);
           server
             .ssrLoadModule('/demos/ssr/server-entry.tsx')
-            .then((module) =>
-              module.default({pathname: req.url}, {baseUrl: '/demos'})
-            )
+            .then((module) => module.default({pathname: req.url}, {baseUrl}))
             .then((view) => {
               const html = `<!DOCTYPE html>
 <html lang="en">
@@ -117,7 +132,8 @@ function ssr(): Plugin {
                   res.end(result);
                 })
                 .catch(next);
-            });
+            })
+            .catch(next);
           return;
         }
         next();

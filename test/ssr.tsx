@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {hydrate, resolveServerView} from '@@/ssr';
+import {hydrate} from '@@/ssr';
+import {resolveServerView} from '@@/server';
 import {act, render} from '@testing-library/react';
 import ReactDOMServer from 'react-dom/server';
 import {navigate} from '@native-router/core';
@@ -64,14 +65,17 @@ describe('SSR', () => {
     document.body.innerHTML = `<div id="root">${html}</div>`;
     eval(document.body.querySelector('script')!.innerHTML);
 
-    const {view: clientView, router} = await hydrate(routes);
-    render(<Router router={router}>{clientView}</Router>, {
+    const {router} = await hydrate(routes);
+    render(<Router router={router} />, {
       container: document.getElementById('root')!,
       hydrate: true
     });
     expect(router.history.createHref('/x')).toBe('/x');
     await act(() => navigate(router, '/other'));
     expect(window.location.pathname).toBe('/other');
+    // the store view is seeded from the payload, so the hydration render
+    // matches the server HTML and a later navigation updates the DOM
+    expect(document.body.textContent).toContain('other');
   });
 
   it('should accept a Location object and server-render search hooks from the server snapshot', async () => {

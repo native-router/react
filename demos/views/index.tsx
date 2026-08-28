@@ -71,8 +71,7 @@ export default function App({initial}: {initial?: ReactNode}) {
   return (
     <HistoryRouter
       routes={routes}
-      // baseUrl={import.meta.env.BASE_URL.slice(0, -1)}
-      baseUrl={process.env.BASE_URL?.slice(0, -1)}
+      baseUrl={import.meta.env.BASE_URL.slice(0, -1)}
       // eslint-disable-next-line react/no-unstable-nested-components
       errorHandler={(e) => <RouterError error={e} />}
       currentView={initial}

@@ -8,6 +8,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./ssr": {
+      "types": "./dist/types/ssr.d.ts",
+      "import": "./dist/ssr.js",
+      "require": "./dist/ssr.cjs"
+    },
     "./server": {
       "types": "./dist/types/server.d.ts",
       "import": "./dist/server.js",
@@ -73,9 +78,7 @@
     "@babel/preset-typescript": "^8.0.1",
     "@eslint-react/eslint-plugin": "^5.18.6",
     "@eslint/js": "^10.0.1",
-    "@linaria/babel-preset": "^5.0.4",
     "@linaria/core": "^8.2.0",
-    "@linaria/vite": "^5.0.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.3.0",
@@ -84,6 +87,7 @@
     "@vitejs/plugin-react": "^6.1.0",
     "@vitest/coverage-v8": "^4.1.11",
     "@vitest/ui": "^4.1.11",
+    "@wyw-in-js/vite": "^2.4.3",
     "babel-plugin-transform-jsx-class": "^0.1.3",
     "babel-plugin-transform-jsx-condition": "^0.1.3",
     "babel-runtime-jsx-plus": "^0.1.5",

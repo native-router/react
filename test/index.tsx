@@ -13,8 +13,6 @@ declare const $jsdom: any;
 
 describe('Router', () => {
   before(() => {
-    process.env.BASE_URL = '/demos/';
-
     configure({
       asyncUtilTimeout: 999999
     });
@@ -99,8 +97,6 @@ describe('Router', () => {
 
 describe('HashRouter', () => {
   before(() => {
-    process.env.BASE_URL = '/demos/';
-
     configure({
       asyncUtilTimeout: 999999
     });
@@ -139,8 +135,6 @@ describe('HashRouter', () => {
 
 describe('MemoryRouter', () => {
   before(() => {
-    process.env.BASE_URL = '/demos/';
-
     configure({
       asyncUtilTimeout: 999999
     });

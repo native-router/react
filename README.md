@@ -83,7 +83,7 @@ function Preview({visible}: {visible: boolean}) {
 - Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
 - Route-level `pendingComponent` skeleton, shown only when no previous view can be retained (cold start, refresh, re-navigation after an error); the nearest matched ancestor's wins, and in-app navigation keeps the previous view instead
   - Keeping the previous view during in-app navigation is an intentional design following browser-native semantics — see the Design Principles section of the core repository's README
-- SSR: `resolveServerView` (from `@native-router/react/server`) renders the view plus an inline data payload; `hydrate` reuses that payload on the client with zero refetch
+- SSR: `resolveServerView` (from `@native-router/react/server`) renders the view plus an inline data payload; `hydrate` (from `@native-router/react/ssr`) reuses that payload on the client with zero refetch
 - Tree-shakable: `sideEffects: false` — unused components and hooks drop out of the bundle
 
 ## Matching semantics
