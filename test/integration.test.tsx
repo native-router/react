@@ -24,10 +24,12 @@ import {
   SearchError,
   commitReplace,
   create,
+  go,
   initHistoryStack,
   navigate,
   refresh,
   resolve,
+  setBlocker,
   toLocation
 } from '@native-router/core';
 import type {Location, StandardSchemaV1} from '@native-router/core';
@@ -2115,5 +2117,175 @@ describe('useBlocker', () => {
       await navigate(router, '/b');
     });
     expect(history.location.pathname).toBe('/b');
+  });
+
+  it('should expose the vetoed navigation as state and proceed on demand', async () => {
+    const {history, router} = setup(['/a']);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe({dirty}: {dirty: boolean}) {
+      // dirty ⇒ veto the navigation (open the ask); clean ⇒ let it pass.
+      const blocker = useBlocker(() => !dirty);
+      blockerRef = blocker;
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe dirty />
+      </Router>
+    );
+    expect(blockerRef!.state).toBe(null);
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    // The ask is open, the router stayed.
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+    expect(history.location.pathname).toBe('/a');
+
+    // Confirm: the retry bypasses this blocker only — the navigation
+    // lands even though the predicate still vetoes.
+    await act(async () => {
+      blockerRef!.proceed();
+    });
+    expect(history.location.pathname).toBe('/b');
+    expect(blockerRef!.state).toBe(null);
+  });
+
+  it('should reset the ask and stay', async () => {
+    const {history, router} = setup(['/a']);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker(() => false);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+
+    await act(async () => {
+      blockerRef!.reset();
+    });
+    expect(blockerRef!.state).toBe(null);
+    expect(history.location.pathname).toBe('/a');
+
+    // After a reset the guard still stands: the next navigation is
+    // asked and vetoed again, with a fresh ask.
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+    expect(history.location.pathname).toBe('/a');
+  });
+
+  it('should open the ask for a vetoed browser POP and proceed as a push', async () => {
+    const {history, router} = setup(['/a']);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker((to) => to === '/b');
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    // In-app navigate to /b — allowed by the predicate, no ask.
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toBe(null);
+
+    // The user presses BACK (leaving /b): the POP is vetoed and
+    // rewound by the core, then the ask opens.
+    await act(async () => {
+      go(router, -1);
+      // The veto's counter-go() is an async browser traversal; settle
+      // it before asserting.
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(blockerRef!.state).toEqual({location: '/a', from: '/b'});
+    expect(history.location.pathname).toBe('/b');
+
+    // Confirm: a fresh push to the target the user asked for (a vetoed
+    // POP is retried as a push — the history entry was never left).
+    await act(async () => {
+      blockerRef!.proceed();
+    });
+    expect(history.location.pathname).toBe('/a');
+    expect(blockerRef!.state).toBe(null);
+  });
+
+  it('should let a later blocker veto the proceed retry into a fresh ask', async () => {
+    const {router} = setup(['/a']);
+    const otherAsks: string[] = [];
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker(() => false);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+    // A second, unconditionally vetoing blocker registered after this
+    // hook's own — the hook's first veto wins, the other is not asked.
+    setBlocker(router, () => {
+      otherAsks.push('other');
+      return false;
+    });
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+    expect(otherAsks).toEqual([]);
+
+    await act(async () => {
+      blockerRef!.proceed();
+    });
+    // The retry bypassed this hook's blocker but still asked the other
+    // one, which vetoed — the navigation stays cancelled (URL intact),
+    // and since that veto belongs to a different blocker, this hook's
+    // ask is not re-opened.
+    expect(otherAsks).toEqual(['other']);
+    expect(router.history.location.pathname).toBe('/a');
+    expect(blockerRef!.state).toBe(null);
+  });
+
+  it('should replace a superseded ask with the newer navigation', async () => {
+    const {router} = setup(['/a']);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker(() => false);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+
+    // A second navigation while the first ask is open: the ask now
+    // tracks the newer target; proceeding to the stale one is gone.
+    await act(async () => {
+      await navigate(router, '/b?x=1');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b?x=1', from: '/a'});
+    // The vetoed second navigation never started — the URL is untouched.
+    expect(router.history.location.pathname).toBe('/a');
   });
 });
