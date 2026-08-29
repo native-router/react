@@ -51,7 +51,7 @@ export function getViewData(view: ReactElement) {
 
 function resolveViewBase(
   matched: Matched<Route>[],
-  {router, location, signal}: ResolveViewContext<Route>,
+  {router, location, signal, context}: ResolveViewContext<Route>,
   resolveData: (
     dataFetcher: ((ctx: Context<Route>) => any) | undefined,
     ctx: Context<Route>
@@ -69,6 +69,10 @@ function resolveViewBase(
         router,
         location,
         search: parseSearchInput(location.search),
+        // The router's instance context(`context` option/prop), handed
+        // to every level's loader; the fallback covers hand-rolled
+        // resolveView contexts like the one covering `signal` below.
+        context: context ?? router.context,
         // The chain's abort signal(navigation-superseded/cancelled) is
         // forwarded to every level's loader; a hand-rolled resolveView
         // context without one still yields a never-aborting signal.

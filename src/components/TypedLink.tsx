@@ -9,37 +9,7 @@ import {
 } from 'react';
 import type {AsLinkProps, TypedLinkProps} from '@@/types';
 import {useRouter} from './Router';
-import {shouldNavigate} from './link-behavior';
-
-/**
- * Interpolate params into a path pattern: `:name` segments take a
- * string, `*name` wildcards a string array(joined with `/`), both
- * percent-encoded; everything else — including `\` escapes — is static
- * text. The grammar matches the core matcher's(the ASCII identifier
- * scanner the type-level `ExtractPathParams` models).
- * @throws when a required param is missing or empty — the click-time
- * params check of {@link TypedLink}
- */
-function interpolatePath(
-  pattern: string,
-  params: Record<string, string | string[]>
-): string {
-  return pattern.replace(
-    /\\.|[:*]([A-Za-z_$][A-Za-z0-9_$]*)/g,
-    (match, name?: string) => {
-      if (name === undefined) return match;
-      const value = params[name];
-      if (value === undefined || value.length === 0) {
-        throw new Error(
-          `Missing param "${name}" for the path pattern "${pattern}"`
-        );
-      }
-      return (Array.isArray(value) ? value : [value])
-        .map(encodeURIComponent)
-        .join('/');
-    }
-  );
-}
+import {interpolatePath, shouldNavigate} from './link-behavior';
 
 /**
  * Link whose `to` is narrowed to a route table's path patterns and whose

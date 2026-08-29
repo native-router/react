@@ -4,6 +4,8 @@ export {default as NavLink} from './components/NavLink';
 export {default as PrefetchLink, usePrefetch} from './components/PrefetchLink';
 export {default as ScrollRestoration} from './components/ScrollRestoration';
 export {default as TypedLink} from './components/TypedLink';
+export {default as TypedNavLink} from './components/TypedNavLink';
+export {default as TypedPrefetchLink} from './components/TypedPrefetchLink';
 export {createRoutes} from './create-routes';
 export {
   useView,

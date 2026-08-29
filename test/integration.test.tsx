@@ -41,6 +41,8 @@ import {
   Router,
   ScrollRestoration,
   TypedLink,
+  TypedNavLink,
+  TypedPrefetchLink,
   View,
   createRouter,
   createRoutes,
@@ -2429,5 +2431,333 @@ describe('useBlocker', () => {
     expect(blockerRef!.state).toEqual({location: '/b?x=1', from: '/a'});
     // The vetoed second navigation never started — the URL is untouched.
     expect(router.history.location.pathname).toBe('/a');
+  });
+});
+
+// 任务：Router context 透传 + TypedNavLink/TypedPrefetchLink 的运行时行为。
+// context：createRouter options / Router 组件 props 的值必须到达
+// beforeLoad、data loader 的 ctx.context（每实例一份）。
+describe('Router context', () => {
+  it('should hand the props context to guards and data loaders', async () => {
+    const api = {who: () => 'ctx-user'};
+    const seen: {guard?: unknown; data?: unknown} = {};
+    const routes: Route[] = [
+      {
+        path: '/ctx',
+        beforeLoad: ({context}) => {
+          seen.guard = context;
+        },
+        data: ({context}) => {
+          seen.data = context;
+          return (context as {who(): string}).who();
+        },
+        component: () => Page
+      }
+    ];
+    const router = createRouter(routes, createMemoryHistory(), {context: api});
+    expect(router.context).toBe(api);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await act(async () => {
+      await navigate(router, '/ctx');
+    });
+    await flush();
+    // The very same object, by reference, on both contexts.
+    expect(seen.guard).toBe(api);
+    expect(seen.data).toBe(api);
+    expect(screen.getByText('ctx-user')).toBeDefined();
+  });
+
+  it('should flow the context of the Router components into loaders', async () => {
+    const api = {who: () => 'prop-user'};
+    const routes: Route[] = [
+      {
+        path: '/',
+        data: ({context}) => (context as {who(): string}).who(),
+        component: () => Page
+      }
+    ];
+    render(
+      <MemoryRouter routes={routes} context={api}>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(screen.getByText('prop-user')).toBeDefined();
+  });
+
+  it('should keep the context undefined without the option', async () => {
+    const seen: unknown[] = [];
+    const routes: Route[] = [
+      {
+        path: '/',
+        beforeLoad: ({context}) => void seen.push(context),
+        data: ({context}) => void seen.push(context),
+        component: () => Page
+      }
+    ];
+    const router = createRouter(routes, createMemoryHistory());
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(seen).toEqual([undefined, undefined]);
+  });
+});
+
+describe('TypedNavLink', () => {
+  const routes = createRoutes({
+    children: [
+      {path: '/', component: () => Home},
+      {path: '/users', component: () => A},
+      {path: '/users/:id', component: () => Page}
+    ]
+  });
+  type Paths = RoutePaths<typeof routes>;
+
+  it('should interpolate params, track active state and navigate', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <nav>
+          <TypedNavLink<Paths> to="/" data-testid="home">
+            Home
+          </TypedNavLink>
+          <TypedNavLink<Paths>
+            to="/users/:id"
+            params={{id: '7'}}
+            data-testid="user"
+            className={({isActive}) => (isActive ? 'on' : 'off')}
+          >
+            User7
+          </TypedNavLink>
+        </nav>
+        <View />
+      </Router>
+    );
+    await flush();
+    const user = screen.getByTestId('user') as HTMLAnchorElement;
+    // The href carries the interpolated target.
+    expect(user.getAttribute('href')).toBe('/users/7');
+    // At '/': the root link is active (the '/' prefix matches every
+    // path), the user link is not.
+    expect(
+      (screen.getByTestId('home') as HTMLAnchorElement).getAttribute(
+        'aria-current'
+      )
+    ).toBe('page');
+    expect(user.getAttribute('aria-current')).toBe(null);
+    expect(user.className).toBe('off');
+
+    fireEvent.click(user);
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(history.location.pathname).toBe('/users/7');
+    // The active state follows the interpolated target.
+    expect(user.getAttribute('aria-current')).toBe('page');
+    expect(user.className).toBe('on');
+    // The root link keeps its prefix match on '/users/7'.
+    expect(
+      (screen.getByTestId('home') as HTMLAnchorElement).getAttribute(
+        'aria-current'
+      )
+    ).toBe('page');
+  });
+
+  it('should respect end and keep NavLink capabilities through an as component', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <nav>
+          <TypedNavLink<Paths>
+            to="/"
+            end
+            as={PillLink}
+            variant="primary"
+            data-testid="root"
+          >
+            Root
+          </TypedNavLink>
+        </nav>
+        <View />
+      </Router>
+    );
+    await flush();
+    const el = screen.getByTestId('root') as HTMLAnchorElement;
+    // The flattened as prop reached the component.
+    expect(el.getAttribute('data-variant')).toBe('primary');
+    // `end`: at '/' the root link is exactly active...
+    expect(el.getAttribute('aria-current')).toBe('page');
+
+    fireEvent.click(screen.getByText('Root'));
+    await flush();
+    // Still exactly active at '/'.
+    expect(el.getAttribute('aria-current')).toBe('page');
+
+    // Navigating away to '/users/7' deactivates it — the '/' prefix
+    // would match without `end`.
+    await act(async () => {
+      await navigate(router, '/users/7');
+    });
+    await flush();
+    expect(el.getAttribute('aria-current')).toBe(null);
+  });
+
+  it('should throw on click when a required param is missing (runtime backstop)', async () => {
+    // The type-level check flags this at compile time; the runtime guard
+    // covers untyped callers — the same cast pattern TypedLink tests use.
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const BadLink = TypedNavLink as unknown as (props: {
+      to: string;
+      params?: Record<string, string>;
+      'data-testid'?: string;
+      children?: React.ReactNode;
+    }) => React.ReactElement;
+    render(
+      <MemoryRouter routes={routes}>
+        <BadLink to="/users/:id" params={{}} data-testid="bad-link">
+          Bad
+        </BadLink>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    // Rendering with a missing param keeps the raw pattern in the href.
+    expect(screen.getByTestId('bad-link').getAttribute('href')).toBe(
+      '/users/:id'
+    );
+    // The click-time check throws inside the event handler; jsdom reports
+    // handler errors as window errors instead of propagating them to the
+    // dispatch caller, so capture through the window error hook.
+    const handlerErrors: Error[] = [];
+    const onWindowError = (e: ErrorEvent) => handlerErrors.push(e.error);
+    window.addEventListener('error', onWindowError);
+    try {
+      fireEvent.click(screen.getByTestId('bad-link'));
+    } finally {
+      window.removeEventListener('error', onWindowError);
+    }
+    expect(handlerErrors[0]?.message).toMatch(/Missing param "id"/);
+    // and no navigation happened
+    expect(screen.queryByText('Page')).toBeNull();
+    consoleError.mockRestore();
+  });
+
+  it('should not throw when the user onClick already prevented the default', async () => {
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const handlerErrors: Error[] = [];
+    const onWindowError = (e: ErrorEvent) => handlerErrors.push(e.error);
+    window.addEventListener('error', onWindowError);
+    const BadLink = TypedNavLink as unknown as (props: {
+      to: string;
+      params?: Record<string, string>;
+      onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+      'data-testid'?: string;
+      children?: React.ReactNode;
+    }) => React.ReactElement;
+    render(
+      <MemoryRouter routes={routes}>
+        <BadLink
+          to="/users/:id"
+          params={{}}
+          data-testid="prevented-link"
+          onClick={(e) => e.preventDefault()}
+        >
+          Bad
+        </BadLink>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    fireEvent.click(screen.getByTestId('prevented-link'));
+    await flush();
+    // A prevented default means no navigation was going to happen — the
+    // missing-param backstop stays quiet instead of throwing.
+    expect(handlerErrors).toEqual([]);
+    expect(screen.queryByText('Page')).toBeNull();
+    window.removeEventListener('error', onWindowError);
+    consoleError.mockRestore();
+  });
+});
+
+describe('TypedPrefetchLink', () => {
+  const routes = createRoutes({
+    children: [
+      {path: '/', component: () => Home},
+      {path: '/users/:id', component: () => Page, data: () => 'user-data'}
+    ]
+  });
+  type Paths = RoutePaths<typeof routes>;
+
+  it('should prefetch and commit the interpolated target', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <View />
+        <TypedPrefetchLink<Paths>
+          to="/users/:id"
+          params={{id: '7'}}
+          data-testid="target"
+        >
+          User7
+        </TypedPrefetchLink>
+      </Router>
+    );
+    await flush();
+    const el = screen.getByTestId('target') as HTMLAnchorElement;
+    expect(el.getAttribute('href')).toBe('/users/7');
+
+    // Hover is the default 'intent' trigger.
+    await act(async () => {
+      fireEvent.mouseEnter(el);
+    });
+    await flush();
+    // The prefetched view resolved the interpolated target.
+    expect(screen.getByText('Home')).toBeDefined();
+
+    fireEvent.click(el);
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(history.location.pathname).toBe('/users/7');
+  });
+
+  it('should keep the raw pattern when a required param is missing', async () => {
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const BadLink = TypedPrefetchLink as unknown as (props: {
+      to: string;
+      params?: Record<string, string>;
+      'data-testid'?: string;
+      children?: React.ReactNode;
+    }) => React.ReactElement;
+    render(
+      <MemoryRouter routes={routes}>
+        <BadLink to="/users/:id" params={{}} data-testid="bad-prefetch">
+          Bad
+        </BadLink>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    // The href keeps the raw pattern; the runtime surfaces the mismatch
+    // as a navigation failure (no route matches ':id' uninterpolated).
+    expect(screen.getByTestId('bad-prefetch').getAttribute('href')).toBe(
+      '/users/:id'
+    );
+    expect(screen.getByText('Home')).toBeDefined();
+    consoleError.mockRestore();
   });
 });

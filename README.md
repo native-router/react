@@ -76,7 +76,8 @@ function Preview({visible}: {visible: boolean}) {
 - `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — `data` loaders and `beforeLoad` guards receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
 - Search type closure: `createRoutes(routes)` re-types the returned table so every level's `data`/`beforeLoad` `ctx.search` derives from the level's own schema — no `Route<P, S>` generics or callback annotations needed; an explicit `Route<P, S>` generic still wins wherever written
-- Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop
+- Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop; `TypedNavLink`/`TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links
+- Router context: a `context` prop on the Router components (or a `context` option on `createRouter`) bakes in one synchronous value per router instance, handed to every `data` loader and `beforeLoad` guard as `ctx.context` — per-instance deps (API client, config, i18n) without a module singleton; omit it and the context is `undefined`, existing setups unchanged
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
 - Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
@@ -108,7 +109,7 @@ A user-provided `onClick` runs first with the same event; calling `e.preventDefa
 
 ## Rendering through your own component (`as`)
 
-`Link`, `NavLink`, `PrefetchLink` and `TypedLink` accept an `as` component: the link renders through it instead of the plain `<a>`, so a design-system link gets SPA navigation, active state and prefetch in one line:
+`Link`, `NavLink`, `PrefetchLink`, `TypedLink`, `TypedNavLink` and `TypedPrefetchLink` accept an `as` component: the link renders through it instead of the plain `<a>`, so a design-system link gets SPA navigation, active state and prefetch in one line:
 
 ```tsx
 import {NavLink} from '@native-router/react';
@@ -138,6 +139,8 @@ The navigation semantics stay owned by the link: `href` is always the computed t
   User 7
 </TypedLink>
 ```
+
+`TypedNavLink` and `TypedPrefetchLink` are the one exception: with a single type argument they still accept an `as` component (`<TypedNavLink<Paths> to="/" end as={HazeNavLink} />`), with the component's own props passing through unchecked; give both type arguments for the full checking above.
 
 `PrefetchLink`'s strategies keep working through the `as` component; the `viewport` strategy observes the DOM node the component forwards its ref to, so a component that never forwards the ref down to a DOM element simply never triggers a viewport prefetch.
 
@@ -332,6 +335,29 @@ function Pager() {
 }
 ```
 
+Give the whole router its own context — deps, config, i18n handles — without a module singleton: pass `context` to the Router components (or `createRouter`) and every `data` loader and `beforeLoad` guard receives it as `ctx.context`, one value per router instance. A router per test keeps fixtures from leaking across tests; a router per micro-frontend pane keeps panes from sharing state.
+
+```tsx
+import {HistoryRouter, View} from '@native-router/react';
+
+const routerContext = {api, i18n};
+
+<HistoryRouter routes={routes} context={routerContext}>
+  <View />
+</HistoryRouter>;
+
+// in a route: ctx.context is the very value passed above
+{
+  path: '/articles',
+  data: ({context}) => context.api.fetchArticles()
+}
+```
+
+- The value is a synchronous snapshot baked in per instance — not a reactive store; changing it does not re-resolve anything
+- The type is inferred from the prop into the router instance (`router.context`); omit it and the context is `undefined` — existing setups keep their exact types and behavior
+- To type `ctx.context` precisely, give `Route` its third generic — `Route<'/articles', Search, typeof routerContext>` — or annotate the callback's ctx; un-annotated loaders see it `any` (the same loose default `ctx.search` gets, since the route table is declared before the router)
+- `createRouter(routes, history, {context})`, `<Router>`, `<HistoryRouter>`, `<HashRouter>` and `<MemoryRouter>` all accept it
+
 Make `Link` targets type-safe: build the table with `createRoutes` (a `satisfies`-style identity function that keeps every `path` literal), extract the pattern union with `RoutePaths`, and narrow `TypedLink` to it. `params` is checked against the exact pattern's param segments — `:name` wants a string, `*name` a string array:
 
 ```tsx
@@ -357,6 +383,22 @@ type AppPaths = RoutePaths<typeof routes>; // '/' | '/users/:id' | '/files/*rest
 ```
 
 At click time the params are interpolated into the pattern (values percent-encoded, wildcard segments joined with `/`); a missing required param throws instead of navigating — the runtime backstop of the type-level check. An `as Route` assertion widens every `path` to `string`, so `RoutePaths` degrades to `string` and `TypedLink` accepts any path, exactly like a plain `Link` — the migration is opt-in.
+
+`TypedNavLink` and `TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links — `to` narrowed to the table, `params` checked per pattern, and every `NavLink`/`PrefetchLink` capability (`end`, `caseSensitive`, active-state `className`/`style`/`children` callbacks, `ariaCurrent`, the `prefetch` strategies) kept:
+
+```tsx
+import {TypedNavLink} from '@native-router/react';
+import type {RoutePaths} from '@native-router/react';
+
+<TypedNavLink<RoutePaths<typeof routes>> to="/" end>Home</TypedNavLink>
+<TypedNavLink<RoutePaths<typeof routes>> to="/users/:id" params={{id: '7'}}>
+  User 7
+</TypedNavLink>
+// @ts-expect-error '/help' is not a pattern of the table
+<TypedNavLink<RoutePaths<typeof routes>> to="/help">Help</TypedNavLink>
+```
+
+The active state is computed on the interpolated target, and a missing required param throws on click instead of navigating (quietly skipped when your own `onClick` already called `preventDefault`). Both compose with an `as` component: with a single type argument — `<TypedNavLink<Paths> to="/" end as={MyLink} variant="primary" />` — the component's own props pass through unchecked (TypeScript cannot infer the second type argument once the first is explicit); give both — `<TypedNavLink<Paths, typeof MyLink> ... />` — to check them like `TypedLink` does.
 
 A render error never crashes past its route: the level's resolved view is wrapped in a route-level error boundary, which renders the same route `errorComponent` with `ctx.phase === 'render'` (the resolve-phase fallback passes no `phase`). Without a route `errorComponent` the error goes to the global `errorHandler`; the boundary keeps working across recoveries — a retry button can `refresh(router)`, and navigating away renders the next view normally.
 

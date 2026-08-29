@@ -20,8 +20,8 @@ import type {
   StandardSchemaV1
 } from '@native-router/core';
 
-export type ResolveViewContext<R extends BaseRoute> = {
-  router: RouterInstance<R>;
+export type ResolveViewContext<R extends BaseRoute, C = any> = {
+  router: RouterInstance<R, any, C>;
   location: Location;
   /**
    * The navigation chain's abort signal, aborted when this navigation is
@@ -30,16 +30,23 @@ export type ResolveViewContext<R extends BaseRoute> = {
    * (tests, SSR shims) keep compiling without it.
    */
   signal?: AbortSignal;
+  /**
+   * The router's {@link Options.context instance context} — the value
+   * passed as `context` to the router. Core always passes it; optional
+   * here for the same hand-rolled-context reason as `signal`.
+   */
+  context?: C;
 };
 
 export type Context<
   T extends BaseRoute,
   P = Record<string, string>,
-  S = SearchInput
+  S = SearchInput,
+  C = any
 > = {
   matched: Matched<T>[];
   index: number;
-  router: RouterInstance<T>;
+  router: RouterInstance<T, any, C>;
   location: Location;
   params: P;
   /**
@@ -57,6 +64,20 @@ export type Context<
    * consuming the network instead of only having its result dropped.
    */
   signal: AbortSignal;
+  /**
+   * The router's {@link Options.context instance context}: the value
+   * passed as the `context` prop of `Router`/`HistoryRouter`/
+   * `HashRouter`/`MemoryRouter`(or the `context` option of
+   * `createRouter`), one per router instance — the injection point for
+   * per-instance dependencies(an API client, config, i18n handles, test
+   * fixtures) that a module singleton cannot isolate.
+   *
+   * Un-annotated loaders see it `any` — the loose default that keeps
+   * differently typed levels assignable to plain `Route`(the same
+   * treatment `search` gets). Thread the context type through the
+   * {@link Route} generic(`Route<P, S, AppContext>`) to type it.
+   */
+  context: C;
   /**
    * Which error phase an `errorComponent` is being rendered for. Absent
    * during the resolve phase(loader/guard/search failures — the fallback
@@ -85,13 +106,18 @@ export type RouteParams<P extends string> = string extends P
  * generic the output type of the route `search` schema and `ctx.search`
  * is typed accordingly, e.g. `Route<'/list', {page: number}>` with
  * `search: z.object({page: z.coerce.number()})` → `search: {page: number}` —
- * for the `data` loader and the `beforeLoad` guard alike.
+ * for the `data` loader and the `beforeLoad` guard alike. Give the third
+ * generic your app context shape — the value of the Router's `context`
+ * prop — and the callbacks' `ctx.context` is typed from it, e.g.
+ * `Route<'/list', {page: number}, {api: Api}>`.
  *
  * Without the search generic an untyped `ctx.search` stays `any` — the
  * default that keeps differently typed levels assignable to plain
  * `Route`: schema outputs are arbitrary(coerced numbers, defaults, ...),
- * so no single degraded shape is bivariant with all of them. At runtime
- * it holds the raw input object of `parseSearchInput`; see `useSearch`
+ * so no single degraded shape is bivariant with all of them. The context
+ * generic degrades to `any` for the same reason. At runtime
+ * `ctx.search` holds the raw input object of `parseSearchInput`; see
+ * `useSearch`
  * for the typed degraded shape. Prefer {@link createRoutes}: its
  * returned table derives every level's `ctx.search` from the level's own
  * schema(see {@link SearchRoutesOf}), so the manual generic is only
@@ -101,12 +127,12 @@ export type RouteParams<P extends string> = string extends P
  * @group Types
  * @category Route
  */
-export type Route<P extends string = string, S = any> = Omit<
+export type Route<P extends string = string, S = any, C = any> = Omit<
   BaseRoute<{
     name?: string;
-    data?(ctx: Context<Route, RouteParams<P>, S>): any | Promise<any>;
+    data?(ctx: Context<Route, RouteParams<P>, S, C>): any | Promise<any>;
     component?(
-      ctx: Context<Route, RouteParams<P>, S>
+      ctx: Context<Route, RouteParams<P>, S, C>
     ): ComponentType | Promise<ComponentType | {default: ComponentType}>;
     /**
      * Not parametrized by `P`: props are strictly contravariant, so a
@@ -134,15 +160,19 @@ export type Route<P extends string = string, S = any> = Omit<
   'path' | 'children' | 'beforeLoad'
 > & {
   /**
-   * Route guard inherited from `BaseRoute`, re-typed by the search
-   * generic: `ctx.search` is `S`(`any` by default — see the Route doc
-   * above). At runtime it holds the level's parsed search — the schema
-   * output, or the degraded input without a schema. The guard context
-   * types `router` as `RouterInstance<any>`: a precise
-   * `RouterInstance<Route>` here would recurse into `Route`'s own
-   * members and break `Route`'s assignability to plain `BaseRoute`.
+   * Route guard inherited from `BaseRoute`, re-typed by the search and
+   * context generics: `ctx.search` is `S`, `ctx.context` is `C`(both
+   * `any` by default — see the Route doc above). At runtime the search
+   * holds the level's parsed search — the schema output, or the degraded
+   * input without a schema — and the context holds the router's
+   * `context` option. The guard context types `router` as
+   * `RouterInstance<any>`: a precise `RouterInstance<Route>` here would
+   * recurse into `Route`'s own members and break `Route`'s assignability
+   * to plain `BaseRoute`.
    */
-  beforeLoad?(ctx: GuardContext<any, S>): Awaitable<string | void>;
+  beforeLoad?(
+    ctx: GuardContext<any, S, Record<string, string>, C>
+  ): Awaitable<string | void>;
   /** Path pattern; params of the contexts above are inferred from it. */
   path?: P;
   /**
@@ -151,7 +181,7 @@ export type Route<P extends string = string, S = any> = Omit<
    * `search` field is inherited from `BaseRoute`, loosely typed — see
    * the Route doc above.
    */
-  children?: Route<any, any>[];
+  children?: Route<any, any, any>[];
 };
 
 export type LoadStatus = {
@@ -320,6 +350,38 @@ export type TypedLinkProps<Paths extends string = string> = {
     : {to: P; params: RouteParams<P>};
 }[Paths] &
   Omit<LinkProps, 'to' | 'prefetch' | 'href'>;
+
+/**
+ * Props of {@link TypedNavLink}: the {@link TypedLinkProps} discriminated
+ * union over the table's path patterns(`to` narrowed, `params` checked
+ * per pattern) combined with every NavLink capability — `end`,
+ * `caseSensitive`, the active-state `className`/`style`/`children`
+ * callbacks and `ariaCurrent`.
+ *
+ * Give the component the table's pattern union as its type argument:
+ * `TypedNavLink<RoutePaths<typeof routes>>`.
+ * @group Types
+ * @category Link
+ */
+export type TypedNavLinkProps<Paths extends string = string> = {
+  [P in Paths]: Record<never, never> extends RouteParams<P>
+    ? {to: P}
+    : {to: P; params: RouteParams<P>};
+}[Paths] &
+  Omit<NavLinkProps, 'to' | 'href'>;
+
+/**
+ * Props of {@link TypedPrefetchLink}: the same discriminated union as
+ * {@link TypedLinkProps}, with the `prefetch` strategy prop kept.
+ * @group Types
+ * @category Link
+ */
+export type TypedPrefetchLinkProps<Paths extends string = string> = {
+  [P in Paths]: Record<never, never> extends RouteParams<P>
+    ? {to: P}
+    : {to: P; params: RouteParams<P>};
+}[Paths] &
+  Omit<LinkProps, 'to' | 'href'>;
 
 export type LinkProps = {
   to: string;

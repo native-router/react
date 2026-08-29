@@ -33,11 +33,11 @@ const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
   null
 );
 
-type Props = {
+type Props<C = undefined> = {
   children?: ReactNode;
   routes: Route[] | Route;
   resolveView?: typeof defaultResolve;
-} & Omit<Options<ReactNode>, 'onLoadingChange'>;
+} & Omit<Options<ReactNode, C>, 'onLoadingChange'>;
 
 /**
  * Base Router Component.
@@ -112,19 +112,21 @@ function resolvePendingView(
   return null;
 }
 
-export function createRouter(
+export function createRouter<C = undefined>(
   routes: Route | Route[],
   history: History,
   {
     resolveView = defaultResolve,
     ...options
-  }: Options<ReactNode> & {resolveView?: ResolveView<Route, ReactNode>} = {}
-): RouterInstance<Route, ReactNode> {
+  }: Options<ReactNode, C> & {
+    resolveView?: ResolveView<Route, ReactNode>;
+  } = {}
+): RouterInstance<Route, ReactNode, C> {
   return create(routes, history, resolveView, options);
 }
 
-function useNewRouter(
-  {routes, children, ...options}: Props,
+function useNewRouter<C = undefined>(
+  {routes, children, ...options}: Props<C>,
   createHistory: () => History
 ) {
   const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
@@ -171,7 +173,7 @@ function useNewRouter(
  * History mode Router Component.
  * @group Components
  */
-export function HistoryRouter(props: Props) {
+export function HistoryRouter<C = undefined>(props: Props<C>) {
   return useNewRouter(props, createBrowserHistory);
 }
 
@@ -179,7 +181,7 @@ export function HistoryRouter(props: Props) {
  * Hash mode Router Component.
  * @group Components
  */
-export function HashRouter(props: Props) {
+export function HashRouter<C = undefined>(props: Props<C>) {
   return useNewRouter(props, createHashHistory);
 }
 
@@ -187,11 +189,11 @@ export function HashRouter(props: Props) {
  * Memory mode Router Component.
  * @group Components
  */
-export function MemoryRouter({
+export function MemoryRouter<C = undefined>({
   initialEntries,
   initialIndex,
   ...props
-}: Props & MemoryHistoryOptions) {
+}: Props<C> & MemoryHistoryOptions) {
   const createHistory = useMemo(
     () => () => createMemoryHistory({initialEntries, initialIndex}),
     [initialEntries, initialIndex]

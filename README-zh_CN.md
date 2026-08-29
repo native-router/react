@@ -76,7 +76,8 @@ function Preview({visible}: {visible: boolean}) {
 - `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——`data` loader 与 `beforeLoad` 守卫都拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
 - search 类型闭环：`createRoutes(routes)` 重写返回表的类型，每层的 `data`/`beforeLoad` `ctx.search` 从该层自己的 schema 输出推导——不再需要 `Route<P, S>` 泛型或回调注解；显式写出的 `Route<P, S>` 泛型仍优先
-- 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底
+- 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底；`TypedNavLink`/`TypedPrefetchLink` 把同样的收窄带给激活态链接与预取链接
+- Router 上下文：Router 组件的 `context` prop（或 `createRouter` 的 `context` 选项）给每个 router 实例固化一份同步值，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到——按实例注入依赖（API client、配置、i18n）而无需模块单例；不传则为 `undefined`，现有接入零改动
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
 - Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决——谓词是放行语义，返回 `true` 放行导航、`false` 否决导航，不是「返回 true 阻止」；组件挂载期间注册、始终以最新闭包被询问；每次否决都记录在返回值的 `blocker.state` 上，并带 `proceed()`/`reset()` 通道——`proceed()` 重试被否决的导航，仅绕过本 hook 自己的 blocker，确认框场景三行搞定）
@@ -108,7 +109,7 @@ function Preview({visible}: {visible: boolean}) {
 
 ## 用自己的组件渲染（`as`）
 
-`Link`、`NavLink`、`PrefetchLink` 与 `TypedLink` 都接受 `as` 组件：链接改用它渲染而不是裸 `<a>`，设计系统的链接组件一行即可获得 SPA 导航、激活态与预取：
+`Link`、`NavLink`、`PrefetchLink`、`TypedLink`、`TypedNavLink` 与 `TypedPrefetchLink` 都接受 `as` 组件：链接改用它渲染而不是裸 `<a>`，设计系统的链接组件一行即可获得 SPA 导航、激活态与预取：
 
 ```tsx
 import {NavLink} from '@native-router/react';
@@ -138,6 +139,8 @@ import {NavLink as HazeNavLink} from 'haze-ui';
   User 7
 </TypedLink>
 ```
+
+`TypedNavLink` 与 `TypedPrefetchLink` 是唯一的例外：单类型实参下也能接 `as` 组件（`<TypedNavLink<Paths> to="/" end as={HazeNavLink} />`），此时组件自有 props 不做检查；两个类型实参都给才有上面的完整检查。
 
 `PrefetchLink` 的预取策略在 `as` 组件下全部可用；`viewport` 策略观察的是组件转发 ref 的那个 DOM 节点，若组件从不把 ref 透传到 DOM 元素，viewport 预取自然不会触发。
 
@@ -332,6 +335,29 @@ function Pager() {
 }
 ```
 
+给整个 router 一份自己的上下文——依赖、配置、i18n 句柄——不用模块单例：给 Router 组件（或 `createRouter`）传 `context`，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到它，每实例一份。每个测试一个 router，fixture 不串；每个微前端面板一个 router，面板之间不共享状态。
+
+```tsx
+import {HistoryRouter, View} from '@native-router/react';
+
+const routerContext = {api, i18n};
+
+<HistoryRouter routes={routes} context={routerContext}>
+  <View />
+</HistoryRouter>;
+
+// 路由里：ctx.context 就是上面传入的那个值
+{
+  path: '/articles',
+  data: ({context}) => context.api.fetchArticles()
+}
+```
+
+- 值是创建时固化的同步快照——不是响应式 store，变更不会触发任何重新解析
+- 类型由 prop 推导进 router 实例（`router.context`）；不传则为 `undefined`——现有接入的类型与行为零改动
+- 要给 `ctx.context` 精确类型，给 `Route` 第三个泛型——`Route<'/articles', Search, typeof routerContext>`——或注解回调的 ctx；未注解的 loader 看到的是 `any`（与 `ctx.search` 的宽松默认同一处理——路由表声明在 router 之前）
+- `createRouter(routes, history, {context})`、`<Router>`、`<HistoryRouter>`、`<HashRouter>`、`<MemoryRouter>` 都可传
+
 让 `Link` 目标类型安全：用 `createRoutes` 构建路由表（`satisfies` 语义的 identity 函数，保留全部 `path` 字面量），用 `RoutePaths` 提取模式联合，再把 `TypedLink` 收窄到该联合。`params` 按目标模式的参数段检查——`:name` 要 string，`*name` 要 string 数组：
 
 ```tsx
@@ -357,6 +383,22 @@ type AppPaths = RoutePaths<typeof routes>; // '/' | '/users/:id' | '/files/*rest
 ```
 
 点击时把 params 插值进模式（值做百分号编码，wildcard 段以 `/` 连接）；缺必填参数会抛错而不导航——类型层校验的运行时兜底。`as Route` 断言会把所有 `path` 拓宽成 `string`，`RoutePaths` 退化为 `string`，`TypedLink` 退化为普通 `Link`——迁移是可选的。
+
+`TypedNavLink` 与 `TypedPrefetchLink` 把同样的收窄带给激活态链接与预取链接——`to` 收窄到表内、`params` 按模式判别，`NavLink`/`PrefetchLink` 的全部能力（`end`、`caseSensitive`、激活态 `className`/`style`/`children` 回调、`ariaCurrent`、`prefetch` 策略）原样保留：
+
+```tsx
+import {TypedNavLink} from '@native-router/react';
+import type {RoutePaths} from '@native-router/react';
+
+<TypedNavLink<RoutePaths<typeof routes>> to="/" end>Home</TypedNavLink>
+<TypedNavLink<RoutePaths<typeof routes>> to="/users/:id" params={{id: '7'}}>
+  User 7
+</TypedNavLink>
+// @ts-expect-error '/help' 不在表内
+<TypedNavLink<RoutePaths<typeof routes>> to="/help">Help</TypedNavLink>
+```
+
+激活态按插值后的目标计算；缺必填参数点击时抛错而不导航（你自己的 `onClick` 已 `preventDefault` 时则静默跳过）。两者都支持 `as` 组合：单类型实参——`<TypedNavLink<Paths> to="/" end as={MyLink} variant="primary" />`——`as` 组件自身的 props 不做检查（第一个类型实参给出后 TypeScript 无法推断第二个）；两个都给——`<TypedNavLink<Paths, typeof MyLink> ... />`——则与 `TypedLink` 同等的完整检查。
 
 渲染错误不会越过路由崩溃：该层解析出的视图外包了路由级错误边界，它用同一路由的 `errorComponent` 渲染并带 `ctx.phase === 'render'`（resolve 期的兜底不带 `phase`）。无路由 `errorComponent` 时错误交给全局 `errorHandler`；边界在恢复后继续工作——重试按钮可 `refresh(router)`，导航离开则正常渲染下一个视图。
 

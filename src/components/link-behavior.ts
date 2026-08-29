@@ -13,6 +13,36 @@
  * @group Components
  */
 
+/**
+ * Interpolate params into a path pattern: `:name` segments take a
+ * string, `*name` wildcards a string array(joined with `/`), both
+ * percent-encoded; everything else — including `\` escapes — is static
+ * text. The grammar matches the core matcher's(the ASCII identifier
+ * scanner the type-level `ExtractPathParams` models).
+ * @throws when a required param is missing or empty — the click-time
+ * params check of `TypedLink`/`TypedNavLink`
+ */
+export function interpolatePath(
+  pattern: string,
+  params: Record<string, string | string[]>
+): string {
+  return pattern.replace(
+    /\\.|[:*]([A-Za-z_$][A-Za-z0-9_$]*)/g,
+    (match, name?: string) => {
+      if (name === undefined) return match;
+      const value = params[name];
+      if (value === undefined || value.length === 0) {
+        throw new Error(
+          `Missing param "${name}" for the path pattern "${pattern}"`
+        );
+      }
+      return (Array.isArray(value) ? value : [value])
+        .map(encodeURIComponent)
+        .join('/');
+    }
+  );
+}
+
 export function shouldNavigate(
   e: {
     button: number;

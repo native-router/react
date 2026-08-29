@@ -18,7 +18,10 @@ import {
   NavLink,
   PrefetchLink,
   TypedLink,
+  TypedNavLink,
+  TypedPrefetchLink,
   View,
+  createRouter,
   createRoutes,
   useBlocker
 } from '../src/index';
@@ -29,7 +32,8 @@ import type {
   RoutePaths,
   SearchInput,
   StandardSchemaV1,
-  TypedLinkProps
+  TypedLinkProps,
+  TypedNavLinkProps
 } from '../src/types';
 
 function Page() {
@@ -276,6 +280,198 @@ describe('Link family `as` polymorphism', () => {
       // @ts-expect-error params is owned by the link, not settable via asProps
       asProps={{params: {x: 1}}}
     />;
+  });
+});
+
+// 任务：TypedNavLink/TypedPrefetchLink —— NavLink/PrefetchLink 的 TypedLink
+// 式判别联合（to 收窄 + params 按模式判别），as 组合在单类型实参下可用。
+describe('TypedNavLink', () => {
+  const routes = createRoutes({
+    children: [
+      {path: '/', component: () => Page},
+      {path: '/users/:id', component: () => Page},
+      {path: '/files/*rest', component: () => Page}
+    ]
+  });
+  type Paths = RoutePaths<typeof routes>;
+
+  it('should accept a table pattern and require its params', () => {
+    const app = (
+      <MemoryRouter routes={routes}>
+        <nav>
+          <TypedNavLink<Paths> to="/" end />
+          <TypedNavLink<Paths> to="/users/:id" params={{id: '7'}} />
+          <TypedNavLink<Paths>
+            to="/files/*rest"
+            params={{rest: ['a', 'b']}}
+            caseSensitive
+            ariaCurrent="step"
+          >
+            Files
+          </TypedNavLink>
+        </nav>
+        <View />
+      </MemoryRouter>
+    );
+    expectTypeOf(app).not.toBeNever();
+  });
+
+  it('should reject a path outside the table and wrong param shapes', () => {
+    // @ts-expect-error '/help' is not a pattern of the table
+    <TypedNavLink<Paths> to="/help" />;
+    // @ts-expect-error params are required for '/users/:id'
+    <TypedNavLink<Paths> to="/users/:id" />;
+    // @ts-expect-error id must be a string, not a number
+    <TypedNavLink<Paths> to="/users/:id" params={{id: 7}} />;
+    // @ts-expect-error wildcard params are string arrays
+    <TypedNavLink<Paths> to="/files/*rest" params={{rest: 'a'}} />;
+    // Static patterns take no params — enforced at the props type level.
+    // (Through the single-type-argument `as` overload the loose index
+    // signature lets an extra `params` key through; that flavor trades
+    // this check for unchecked `as`-props.)
+    // @ts-expect-error static patterns take no params
+    const badStatic: TypedNavLinkProps<Paths> = {to: '/', params: {id: '7'}};
+    void badStatic;
+  });
+
+  it('should compose an as component with a single type argument', () => {
+    // The contract's exact shape: one type argument plus `as` — the
+    // `as`-props region is unchecked, the pattern union still enforced.
+    <TypedNavLink<Paths> to="/" end as={PillLink} variant="primary" />;
+    // The discrimination survives the loose intersection.
+    // @ts-expect-error a path outside the table is still rejected
+    <TypedNavLink<Paths> to="/help" as={PillLink} />;
+    // @ts-expect-error params are still required for '/users/:id'
+    <TypedNavLink<Paths> to="/users/:id" as={PillLink} />;
+  });
+
+  it('should fully check the as component with both type arguments', () => {
+    const anchorRef = createRef<HTMLAnchorElement>();
+    <TypedNavLink<Paths, typeof PillLink>
+      to="/users/:id"
+      params={{id: '7'}}
+      variant="primary"
+      ref={anchorRef}
+    />;
+    <TypedNavLink<Paths, typeof PillLink> to="/" variant="ghost" end />;
+    // @ts-expect-error variant is required by PillLink
+    <TypedNavLink<Paths, typeof PillLink> to="/" />;
+    // @ts-expect-error 'nope' is not a PillLink variant
+    <TypedNavLink<Paths, typeof PillLink> to="/" variant="nope" />;
+    // @ts-expect-error PlainLink does not take a ref (no forwardRef)
+    <TypedNavLink<Paths, typeof PlainLink> to="/" ref={anchorRef} />;
+  });
+
+  it('should keep the active-state callbacks typed', () => {
+    <TypedNavLink<Paths>
+      to="/"
+      className={({isActive, isExactActive}) =>
+        isActive && isExactActive ? 'on' : 'off'
+      }
+      style={({isActive}) => ({top: isActive ? '1px' : '2px'})}
+    >
+      {({isActive}) => (isActive ? 'Home*' : 'Home')}
+    </TypedNavLink>;
+  });
+});
+
+describe('TypedPrefetchLink', () => {
+  type Paths = '/' | '/users/:id';
+
+  it('should keep the prefetch strategy and require pattern params', () => {
+    <TypedPrefetchLink<Paths> to="/" prefetch="render" />;
+    <TypedPrefetchLink<Paths>
+      to="/users/:id"
+      params={{id: '7'}}
+      prefetch="viewport"
+    />;
+    // @ts-expect-error params are required for '/users/:id'
+    <TypedPrefetchLink<Paths> to="/users/:id" />;
+    // @ts-expect-error the strategy union still applies
+    <TypedPrefetchLink<Paths> to="/" prefetch="nope" />;
+    // @ts-expect-error a path outside the table is rejected
+    <TypedPrefetchLink<Paths> to="/help" />;
+  });
+
+  it('should compose an as component with a single type argument', () => {
+    <TypedPrefetchLink<Paths>
+      to="/users/:id"
+      params={{id: '7'}}
+      as={PillLink}
+      variant="primary"
+    />;
+    // Both arguments keep the full checking.
+    <TypedPrefetchLink<Paths, typeof PillLink>
+      to="/"
+      variant="ghost"
+      prefetch="render"
+    />;
+    // @ts-expect-error variant is required by PillLink
+    <TypedPrefetchLink<Paths, typeof PillLink> to="/" prefetch="render" />;
+  });
+});
+
+// 任务：Router context 透传——context 从组件 props/createRouter options
+// 推导，流入 Route<P, S, C> 的 data/beforeLoad ctx.context。
+describe('Router context typing', () => {
+  type AppContext = {api: {list(): string[]}; tag: string};
+
+  it('should infer the context type from the Router props', () => {
+    const routes: Route[] = [{path: '/', component: () => Page}];
+    <MemoryRouter routes={routes} context={{api: {list: () => []}, tag: 'x'}}>
+      <View />
+    </MemoryRouter>;
+    // Each usage infers its own C; pin it to assert the shape contract.
+    // @ts-expect-error a missing api member does not satisfy the pinned shape
+    <MemoryRouter<AppContext> routes={routes} context={{tag: 'x'}}>
+      <View />
+    </MemoryRouter>;
+  });
+
+  it('should type ctx.context of data and beforeLoad through Route<P, S, C>', () => {
+    type AppRoute<P extends string = string, S = any> = Route<P, S, AppContext>;
+    const routes = {
+      path: '/list' as const,
+      data: (ctx: Parameters<NonNullable<AppRoute<'/list'>['data']>>[0]) => {
+        expectTypeOf(ctx.context).toEqualTypeOf<AppContext>();
+        return ctx.context.api.list();
+      },
+      beforeLoad: (
+        ctx: Parameters<NonNullable<AppRoute<'/list'>['beforeLoad']>>[0]
+      ) => (ctx.context.tag ? undefined : '/')
+    };
+    void routes;
+    expectTypeOf<
+      Parameters<
+        NonNullable<Route<'/list', any, AppContext>['data']>
+      >[0]['context']
+    >().toEqualTypeOf<AppContext>();
+    expectTypeOf<
+      Parameters<
+        NonNullable<Route<'/list', any, AppContext>['beforeLoad']>
+      >[0]['context']
+    >().toEqualTypeOf<AppContext>();
+    // Un-annotated levels stay loose (any) — assignability to plain Route.
+    expectTypeOf<
+      Parameters<NonNullable<Route['data']>>[0]['context']
+    >().toEqualTypeOf<any>();
+  });
+
+  it('should type createRouter return context from the option', async () => {
+    const {createMemoryHistory} = await import('history');
+    const history = createMemoryHistory();
+    const appContext: AppContext = {
+      api: {
+        list: () => []
+      },
+      tag: 'x'
+    };
+    const router = createRouter([{path: '/'}], history, {
+      context: appContext
+    });
+    expectTypeOf(router.context).toEqualTypeOf<AppContext>();
+    const plain = createRouter([{path: '/'}], createMemoryHistory());
+    expectTypeOf(plain.context).toEqualTypeOf<undefined>();
   });
 });
 
