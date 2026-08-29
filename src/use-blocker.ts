@@ -41,11 +41,13 @@ export type Blocker = {
  *
  * The predicate is the core `setBlocker` veto: `(to, from) => boolean`
  * over path strings(including search and hash), asked synchronously at
- * the head of every navigation and before a history POP lands. Return
- * `false` to veto: a vetoed navigation never starts and a vetoed POP is
- * rewound. `refresh` and guard redirects are never blocked; the effect
- * releases the blocker on unmount, so the guard lives exactly as long
- * as the guarding component.
+ * the head of every navigation and before a history POP lands. It
+ * ALLOW-lists, it does not block-list: return `true` to let the
+ * navigation through, `false` to veto it — a vetoed navigation never
+ * starts and a vetoed POP is rewound. A predicate that throws counts as
+ * a veto too(fail-closed, see {@link BlockerFn}). `refresh` and guard
+ * redirects are never blocked; the effect releases the blocker on
+ * unmount, so the guard lives exactly as long as the guarding component.
  *
  * The predicate is stored in a ref and re-synced on every render, so a
  * navigation is always asked the latest closure — a `confirmed` flag it
@@ -57,7 +59,10 @@ export type Blocker = {
  * confirm UI is a three-liner instead of a hand-rolled ref/state pair:
  *
  * ```tsx
- * const blocker = useBlocker(() => isDirtyRef.current);
+ * // The predicate allow-lists — `true` lets the navigation through,
+ * // `false` vetoes it — so an unsaved-changes guard inverts dirtiness:
+ * // dirty ⇒ veto (the ask opens), clean ⇒ let it pass.
+ * const blocker = useBlocker(() => !isDirtyRef.current);
  *
  * return (
  *   <>
@@ -81,8 +86,9 @@ export type Blocker = {
  *
  * @group Hooks
  * @param fn blocker predicate; `to` is the target path, `from` the
- * current path. Return `false` to veto (and open the ask), `true` to
- * let the navigation through
+ * current path. `true` lets the navigation through, `false` vetoes it
+ * (and opens the ask) — the predicate allow-lists, it does not
+ * block-list
  * @returns {@link Blocker} — the pending ask and its proceed/reset
  * channel
  * @see {@link setBlocker}

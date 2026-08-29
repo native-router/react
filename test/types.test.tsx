@@ -19,7 +19,8 @@ import {
   PrefetchLink,
   TypedLink,
   View,
-  createRoutes
+  createRoutes,
+  useBlocker
 } from '../src/index';
 import type {
   LinkProps,
@@ -425,5 +426,27 @@ describe('createRoutes search closure', () => {
     const guard: Route['beforeLoad'] = ({search}) => (search ? undefined : '/');
     void guard;
     void manual;
+  });
+});
+
+// 任务：useBlocker 谓词契约（返回 `true` 放行、`false` 否决）在类型层
+// 能钉住的那一半。「返回 true = 阻止」的方向性误读无法靠类型区分
+// （true/false 同为 boolean），那半边靠 src/use-blocker.ts 的 JSDoc 与
+// test/integration.test.tsx 的 useBlocker describe 的运行时断言把守；
+// 类型层能挡住的是「真值非 boolean 冒充裁决」这一同族错误。
+describe('useBlocker predicate contract', () => {
+  const dirtyRef = {current: false};
+
+  it('should type the predicate as (to, from) => boolean', () => {
+    expectTypeOf<Parameters<typeof useBlocker>[0]>().toEqualTypeOf<
+      (to: string, from: string) => boolean
+    >();
+  });
+
+  it('should reject a truthy non-boolean verdict', () => {
+    const fn: Parameters<typeof useBlocker>[0] = () =>
+      // @ts-expect-error a truthy string is not a boolean verdict
+      dirtyRef.current ? 'dirty' : '';
+    void fn;
   });
 });
