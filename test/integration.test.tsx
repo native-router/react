@@ -2261,6 +2261,148 @@ describe('useBlocker', () => {
     expect(blockerRef!.state).toBe(null);
   });
 
+  it('should not leak the proceed bypass when an earlier blocker vetoes the retry', async () => {
+    const {history, router} = setup(['/a']);
+    // Registered BEFORE the hook's own blocker, so it is asked first:
+    // a closed gate truncates the asking before the hook is reached.
+    let gateClosed = false;
+    setBlocker(router, () => !gateClosed);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker(() => false);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    // Gate open: the hook is asked, vetoes, the ask opens.
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+    expect(history.location.pathname).toBe('/a');
+
+    // Close the gate, then confirm: the retry is vetoed by the gate
+    // BEFORE this hook's blocker is asked, so the one-shot bypass is
+    // never consumed by an ask — it must be extinguished anyway.
+    gateClosed = true;
+    await act(async () => {
+      blockerRef!.proceed();
+    });
+    expect(history.location.pathname).toBe('/a');
+    expect(blockerRef!.state).toBe(null);
+
+    // Reopen the gate: an unrelated navigation must be asked by this
+    // hook again. A leaked bypass would let it through silently — the
+    // dirty guard would have lost one protection.
+    gateClosed = false;
+    await act(async () => {
+      await navigate(router, '/b?x=1');
+    });
+    expect(history.location.pathname).toBe('/a');
+    expect(blockerRef!.state).toEqual({location: '/b?x=1', from: '/a'});
+
+    // And the retry-success path clears the flag through consumption:
+    // proceed lands, and the next navigation is vetoed afresh.
+    await act(async () => {
+      blockerRef!.proceed();
+    });
+    expect(history.location.pathname).toBe('/b');
+    expect(blockerRef!.state).toBe(null);
+    await act(async () => {
+      await navigate(router, '/a');
+    });
+    expect(history.location.pathname).toBe('/b');
+    expect(blockerRef!.state).toEqual({location: '/a', from: '/b?x=1'});
+  });
+
+  it('should keep blocking after a proceed landed — the bypass is one-shot', async () => {
+    const {history, router} = setup(['/a']);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker(() => false);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+    await act(async () => {
+      blockerRef!.proceed();
+    });
+    expect(history.location.pathname).toBe('/b');
+    expect(blockerRef!.state).toBe(null);
+
+    // The bypass died with the retry it was minted for: the guard
+    // stands again on the very next navigation.
+    await act(async () => {
+      await navigate(router, '/a');
+    });
+    expect(history.location.pathname).toBe('/b');
+    expect(blockerRef!.state).toEqual({location: '/a', from: '/b'});
+  });
+
+  it('should ask the predicate exactly once under StrictMode double-effects', async () => {
+    const {history, router} = setup(['/a']);
+    const fn = vi.fn(() => false);
+    function Probe() {
+      useBlocker(fn);
+      return null;
+    }
+    render(
+      <React.StrictMode>
+        <Router router={router}>
+          <Probe />
+        </Router>
+      </React.StrictMode>
+    );
+
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    // StrictMode runs the effect register→release→register; exactly one
+    // registration must survive, so one navigation asks the predicate
+    // once — a double registration would ask twice.
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(history.location.pathname).toBe('/a');
+  });
+
+  it('should no-op proceed and reset while nothing is pending', async () => {
+    const {history, router} = setup(['/a']);
+    let blockerRef: ReturnType<typeof useBlocker> | undefined;
+    function Probe() {
+      blockerRef = useBlocker(() => false);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <Probe />
+      </Router>
+    );
+
+    expect(() => {
+      blockerRef!.proceed();
+      blockerRef!.reset();
+    }).not.toThrow();
+    expect(blockerRef!.state).toBe(null);
+    // The no-ops are truly inert — not even a bypass leaked, so the
+    // guard still vetoes the next navigation.
+    await act(async () => {
+      await navigate(router, '/b');
+    });
+    expect(history.location.pathname).toBe('/a');
+    expect(blockerRef!.state).toEqual({location: '/b', from: '/a'});
+  });
+
   it('should replace a superseded ask with the newer navigation', async () => {
     const {router} = setup(['/a']);
     let blockerRef: ReturnType<typeof useBlocker> | undefined;

@@ -73,9 +73,11 @@ export type Blocker = {
  *
  * `proceed()` retries the vetoed navigation bypassing this hook's own
  * blocker only — other registered blockers (and the route guards) are
- * still asked, in registration order. Note the retry is a fresh push
- * navigation: for a vetoed browser POP it appends an entry rather than
- * re-running the history traversal.
+ * still asked, in registration order. The bypass is strictly one-shot:
+ * whether the retry lands or is vetoed by another blocker, it never
+ * carries over to a later, unrelated navigation. Note the retry is a
+ * fresh push navigation: for a vetoed browser POP it appends an entry
+ * rather than re-running the history traversal.
  *
  * @group Hooks
  * @param fn blocker predicate; `to` is the target path, `from` the
@@ -96,8 +98,10 @@ export function useBlocker(fn: BlockerFn): Blocker {
   // confirm callbacks must not depend on the render closure's freshness.
   const pendingRef = useRef<BlockerState | null>(null);
   // One-shot bypass for the proceed retry: set right before the retry
-  // navigation, cleared once it has been asked. A plain ref — the flag
-  // must be visible to the synchronously-asked blocker, not to React.
+  // navigation, cleared once the retry's blocker asking has run — asked
+  // and consumed, or truncated by an earlier blocker's veto(see
+  // `proceed`). A plain ref — the flag must be visible to the
+  // synchronously-asked blocker, not to React.
   const bypassRef = useRef(false);
 
   useEffect(
@@ -126,7 +130,17 @@ export function useBlocker(fn: BlockerFn): Blocker {
     pendingRef.current = null;
     setAsk(null);
     bypassRef.current = true;
-    void navigate(router, pending.location).catch(() => undefined);
+    // `navigate` asks the blockers synchronously at its head, so by the
+    // time the call returns the one-shot flag is either consumed(this
+    // blocker was asked and let the retry through) or the retry was
+    // truncated by an earlier-registered blocker's veto. Both outcomes
+    // must extinguish the flag: leaving it set would silently bypass
+    // this guard on the next, unrelated navigation.
+    try {
+      void navigate(router, pending.location).catch(() => undefined);
+    } finally {
+      bypassRef.current = false;
+    }
   }, [router]);
 
   const reset = useCallback(() => {
