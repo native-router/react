@@ -9,36 +9,56 @@ import {
 } from 'react';
 import type {AsLinkProps, TypedLinkProps} from '@@/types';
 import {useRouter} from './Router';
-import {interpolatePath, shouldNavigate} from './link-behavior';
+import {interpolatePath, appendSearch, shouldNavigate} from './link-behavior';
 
 /**
  * Link whose `to` is narrowed to a route table's path patterns and whose
  * `params` is checked against the exact pattern's param segments. Give
- * it the pattern union as its type argument:
+ * it the whole table as its type argument and `search` joins the check
+ * too — typed by the pattern's route schema input:
  *
  * ```tsx
- * const routes = createRoutes({children: [{path: '/users/:id'}, ...]});
+ * const routes = createRoutes({
+ *   children: [
+ *     {
+ *       path: '/list',
+ *       search: z.object({page: z.coerce.number()}),
+ *       ...
+ *     },
+ *     {path: '/users/:id'}, ...
+ *   ]
+ * });
  *
- * <TypedLink<RoutePaths<typeof routes>> to="/users/:id" params={{id: '7'}}>
+ * <TypedLink<typeof routes> to="/list" search={{page: 2}}>
+ *   Page 2
+ * </TypedLink>
+ * <TypedLink<typeof routes> to="/users/:id" params={{id: '7'}}>
  *   User 7
  * </TypedLink>
  * ```
  *
- * A `to` outside the table, a missing required param or a wrong param
- * shape is a compile error; at click time the params are interpolated
- * into the pattern and a missing required param throws instead of
- * navigating(the type-level check's runtime backstop).
+ * A `to` outside the table, a missing required param, a wrong param
+ * shape or a `search` the pattern's schema rejects is a compile error;
+ * at click time the params are interpolated into the pattern, the
+ * search is serialized into the query string(`String()`-ed values,
+ * arrays repeating the key, `undefined`/`null` dropped) and the route's
+ * schema validates the result exactly as it would a hand-written URL —
+ * a missing required param throws instead of navigating(the type-level
+ * check's runtime backstop).
  *
- * Without the type argument the component degrades to a plain `Link`:
- * any path, params optional. Click interception follows {@link Link}
+ * The paths-union flavor — `TypedLink<RoutePaths<typeof routes>>` —
+ * keeps working unchanged and keeps checking `to`/`params`, with
+ * `search` loose(schemas do not ride a bare path string). Without any
+ * type argument the component degrades to a plain `Link`: any path,
+ * params and search optional. Click interception follows {@link Link}
  * — only plain primary-button clicks are intercepted.
  *
  * An `as` component can be layered on top(`asProps`/flattened `as`-props
  * per {@link AsLinkProps}); give both type arguments to keep the pattern
- * narrowing: `<TypedLink<Paths, typeof MyLink> ... />`.
+ * narrowing: `<TypedLink<typeof routes, typeof MyLink> ... />`.
  * @group Components
- * @param props `to`(a pattern of the table), `params`(per the pattern)
- * and the usual anchor attributes
+ * @param props `to`(a pattern of the table), `params`(per the pattern),
+ * `search`(the pattern's schema input) and the usual anchor attributes
  */
 // The implementation works on the loose shape; the typed signature is
 // attached below so discriminated-union props need not be destructured
@@ -47,6 +67,7 @@ function TypedLinkImpl(
   {
     to,
     params,
+    search,
     onClick,
     as,
     asProps,
@@ -54,9 +75,10 @@ function TypedLinkImpl(
   }: {
     to: string;
     params?: Record<string, string | string[]>;
+    search?: Record<string, unknown>;
     as?: ElementType;
     asProps?: Record<string, unknown>;
-  } & Omit<TypedLinkProps, 'to' | 'params' | 'prefetch' | 'href'>,
+  } & Omit<TypedLinkProps, 'to' | 'params' | 'search' | 'prefetch' | 'href'>,
   ref: Ref<HTMLAnchorElement>
 ) {
   const router = useRouter();
@@ -92,10 +114,11 @@ function TypedLinkImpl(
 
     if (lockRef.current) return;
     // Click-time params check per the pattern's param segments: a missing
-    // required param throws instead of navigating.
+    // required param throws instead of navigating. The search joins the
+    // target here too — the route's schema validates it on resolve.
     const target = interpolatePath(to, params ?? {});
     lockRef.current = true;
-    navigate(router, target)
+    navigate(router, appendSearch(target, search))
       .catch(() => undefined)
       .finally(() => {
         lockRef.current = false;
@@ -108,21 +131,22 @@ function TypedLinkImpl(
       {...rest}
       {...asProps}
       ref={ref}
-      href={createHref(router, href)}
+      href={createHref(router, appendSearch(href, search))}
       onClick={handleClick}
     />
   );
 }
 
 // Generic first for call sites, plain tail for ComponentProps(see Link);
-// the tail keeps the pre-`as` discriminated-union shape.
+// the tail keeps the pre-`as` discriminated-union shape with the loose
+// default argument baked in (a generic tail would collapse to the
+// unconstrained type parameter's `unknown` when read uninstantiated
+// through ComponentProps).
 const TypedLink = forwardRef(TypedLinkImpl) as {
-  <Paths extends string = string, A extends ElementType = 'a'>(
-    props: AsLinkProps<TypedLinkProps<Paths>, A>
+  <PathsOrRoutes = string, A extends ElementType = 'a'>(
+    props: AsLinkProps<TypedLinkProps<PathsOrRoutes>, A>
   ): ReactElement | null;
-  <Paths extends string = string>(
-    props: TypedLinkProps<Paths>
-  ): ReactElement | null;
+  (props: TypedLinkProps): ReactElement | null;
   displayName?: string;
 };
 

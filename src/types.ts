@@ -17,7 +17,7 @@ import type {
   Location,
   RouterInstance,
   SearchInput,
-  StandardSchemaV1
+  StandardSchemaV1 as CoreStandardSchemaV1
 } from '@native-router/core';
 
 export type ResolveViewContext<R extends BaseRoute, C = any> = {
@@ -198,7 +198,7 @@ export type LoadStatus = {
  * @category Route
  */
 export type RouteSearchOf<R> = R extends {
-  search: StandardSchemaV1<any, infer Output>;
+  search: CoreStandardSchemaV1<any, infer Output>;
 }
   ? Output
   : SearchInput;
@@ -333,55 +333,121 @@ type ParentPaths<P, ChildPaths> = string extends ChildPaths
     : never;
 
 /**
- * Props of {@link TypedLink}: a discriminated union over the table's
- * path patterns, so `params` is checked against the param segments of
- * the exact `to` pattern — omitted for static patterns, required with
- * `{name: string}` for `:name` segments and `{name: string[]}` for
- * `*name` wildcards(see {@link RouteParams}).
- *
- * Give the component the table's pattern union as its type argument:
- * `TypedLink<RoutePaths<typeof routes>>`.
- * @group Types
- * @category Route
+ * One member of the {@link TypedLinkProps} discriminated union: `to`
+ * narrowed to a single pattern, `params` required exactly when the
+ * pattern has param segments(`:name` → `{name: string}`,
+ * `*name` → `{name: string[]}`, static patterns take none — see
+ * {@link RouteParams}), and `search` typed by whoever collected the
+ * member(the schema input for a table, the loose
+ * {@link SearchInput} for a bare paths union).
  */
-export type TypedLinkProps<Paths extends string = string> = {
-  [P in Paths]: Record<never, never> extends RouteParams<P>
-    ? {to: P}
-    : {to: P; params: RouteParams<P>};
-}[Paths] &
-  Omit<LinkProps, 'to' | 'prefetch' | 'href'>;
+type TypedLinkMember<P extends string, Search> =
+  Record<never, never> extends RouteParams<P>
+    ? {to: P; search?: Search}
+    : {to: P; params: RouteParams<P>; search?: Search};
+
+/**
+ * The {@link TypedLinkProps} union collected from a whole route TABLE:
+ * recursion mirrors {@link RoutePaths} — a level with `children`
+ * contributes only the concatenated parent+child patterns(the runtime
+ * matcher requires a child to consume the remainder), a `path`-less
+ * layout passes its children through, a leaf contributes its own
+ * pattern — except each pattern now carries its leaf level's search
+ * input type(see {@link RouteSearchInputOf}) alongside it, so `to`
+ * discrimination picks the right `search` shape too. A widened `path`
+ * (an `as Route` assertion) degrades the whole union to the loose
+ * single-member shape, exactly like `RoutePaths` degrades to `string`.
+ */
+type TypedLinkMembersOf<Table> = Table extends readonly (infer R)[]
+  ? RouteLinkMembers<R>
+  : RouteLinkMembers<Table>;
+
+type RouteLinkMembers<R> = R extends {path?: infer P; children?: infer C}
+  ? [P] extends [never]
+    ? never
+    : unknown extends P
+      ? C extends readonly unknown[]
+        ? TypedLinkMembersOf<C>
+        : never
+      : string extends P
+        ? TypedLinkMember<string, SearchInput>
+        : C extends readonly unknown[]
+          ? PrefixedLinkMembers<P & string, TypedLinkMembersOf<C>>
+          : TypedLinkMember<OwnPath<P>, RouteSearchInputOf<R>>
+  : never;
+
+/**
+ * Re-prefix every member's `to` with the parent's pattern
+ * (`{to: '/:id'}` under `'/users'` → `{to: '/users/:id'}`); params and
+ * search ride along untouched. A widened child member degrades to the
+ * loose single-member shape(the member-twin of `ParentPaths`).
+ */
+type PrefixedLinkMembers<P extends string, Members> = Members extends {
+  to: infer T;
+}
+  ? string extends T
+    ? TypedLinkMember<string, SearchInput>
+    : T extends string
+      ? {to: `${P}${T}`} & Omit<Members, 'to'>
+      : never
+  : never;
+
+/**
+ * Props of {@link TypedLink}: a discriminated union over the route
+ * table, so `params` is checked against the param segments of the exact
+ * `to` pattern — omitted for static patterns, required with
+ * `{name: string}` for `:name` segments and `{name: string[]}` for
+ * `*name` wildcards(see {@link RouteParams}) — and `search` is checked
+ * against that pattern's route schema input(see
+ * {@link RouteSearchInputOf}), serialized into the href and the
+ * navigation target.
+ *
+ * Give the component the whole table as its type argument —
+ * `TypedLink<typeof routes>` over a `createRoutes` table — and `to`,
+ * `params` and `search` are all checked per pattern. The paths-union
+ * flavor keeps working too: `TypedLink<RoutePaths<typeof routes>>`
+ * checks `to`/`params` as before, with `search` loose
+ * ({@link SearchInput}) since a bare path string carries no schema.
+ * @group Types
+ * @category Link
+ */
+export type TypedLinkProps<PathsOrRoutes = string> =
+  (PathsOrRoutes extends string
+    ? {[P in PathsOrRoutes]: TypedLinkMember<P, SearchInput>}[PathsOrRoutes]
+    : TypedLinkMembersOf<PathsOrRoutes>) &
+    Omit<LinkProps, 'to' | 'prefetch' | 'href'>;
 
 /**
  * Props of {@link TypedNavLink}: the {@link TypedLinkProps} discriminated
- * union over the table's path patterns(`to` narrowed, `params` checked
- * per pattern) combined with every NavLink capability — `end`,
+ * union over the route table(`to` narrowed, `params` and `search`
+ * checked per pattern) combined with every NavLink capability — `end`,
  * `caseSensitive`, the active-state `className`/`style`/`children`
  * callbacks and `ariaCurrent`.
  *
- * Give the component the table's pattern union as its type argument:
- * `TypedNavLink<RoutePaths<typeof routes>>`.
+ * Give the component the table as its type argument:
+ * `TypedNavLink<typeof routes>`(or the paths-union flavor, see
+ * {@link TypedLinkProps}).
  * @group Types
  * @category Link
  */
-export type TypedNavLinkProps<Paths extends string = string> = {
-  [P in Paths]: Record<never, never> extends RouteParams<P>
-    ? {to: P}
-    : {to: P; params: RouteParams<P>};
-}[Paths] &
-  Omit<NavLinkProps, 'to' | 'href'>;
+export type TypedNavLinkProps<PathsOrRoutes = string> =
+  (PathsOrRoutes extends string
+    ? {[P in PathsOrRoutes]: TypedLinkMember<P, SearchInput>}[PathsOrRoutes]
+    : TypedLinkMembersOf<PathsOrRoutes>) &
+    Omit<NavLinkProps, 'to' | 'href'>;
 
 /**
  * Props of {@link TypedPrefetchLink}: the same discriminated union as
- * {@link TypedLinkProps}, with the `prefetch` strategy prop kept.
+ * {@link TypedLinkProps}(`to` narrowed, `params` and `search` checked
+ * per pattern), with the `prefetch` strategy prop kept.
  * @group Types
  * @category Link
  */
-export type TypedPrefetchLinkProps<Paths extends string = string> = {
-  [P in Paths]: Record<never, never> extends RouteParams<P>
-    ? {to: P}
-    : {to: P; params: RouteParams<P>};
-}[Paths] &
-  Omit<LinkProps, 'to' | 'href'>;
+export type TypedPrefetchLinkProps<PathsOrRoutes = string> =
+  (PathsOrRoutes extends string
+    ? {[P in PathsOrRoutes]: TypedLinkMember<P, SearchInput>}[PathsOrRoutes]
+    : TypedLinkMembersOf<PathsOrRoutes>) &
+    Omit<LinkProps, 'to' | 'href'>;
 
 export type LinkProps = {
   to: string;
@@ -475,11 +541,86 @@ export type AsLinkProps<Base, A extends ElementType> = {
   Omit<ComponentPropsWithoutRef<A>, KeysOfUnion<Base> | AsManagedKeys> &
   AsRefProps<A>;
 
-export type {
-  SearchInput,
-  SearchOutputOf,
-  StandardSchemaV1
-} from '@native-router/core';
+export type {SearchInput, SearchOutputOf} from '@native-router/core';
+
+/**
+ * The [Standard Schema](https://standardschema.dev) interface, version 1,
+ * as this package re-exports it: the core's inlined shape plus the spec's
+ * optional `~standard.types` phantom pair — the ONLY member able to carry
+ * the schema's INPUT type(`validate`'s signature only ever mentions the
+ * output). zod/valibot/arktype schemas expose it, which is what lets
+ * {@link RouteSearchInputOf} extract the URL-side input type a link's
+ * `search` prop accepts; schemas without it(a bare `validate`, older
+ * vendors, hand-written fixtures) stay perfectly assignable — their
+ * input just degrades to the loose {@link SearchInput}.
+ *
+ * The `types` property never holds a runtime value: vendors write
+ * `types: undefined as unknown as Types<Input, Output>` precisely so
+ * the pair rides the static type. Structurally compatible with the
+ * core's `StandardSchemaV1` in both directions(the extra member is
+ * optional), so existing annotations keep working unchanged.
+ *
+ * The spec's `Props`/`Types` inner interfaces ship as flat siblings
+ * (`StandardSchemaV1Props`/`StandardSchemaV1Types`) rather than a
+ * namespace declaration.
+ * @group Types
+ * @category Route
+ */
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly '~standard': StandardSchemaV1Props<Input, Output>;
+}
+
+/**
+ * The `~standard` properties of {@link StandardSchemaV1}: the core's
+ * spec shape(`version`/`vendor`/`validate`) plus the optional
+ * input/output phantom pair. See {@link StandardSchemaV1}.
+ * @group Types
+ * @category Route
+ */
+export interface StandardSchemaV1Props<
+  Input = unknown,
+  Output = Input
+> extends CoreStandardSchemaV1.Props<Input, Output> {
+  readonly types?: StandardSchemaV1Types<Input, Output> | undefined;
+}
+
+/**
+ * The phantom input/output pair of {@link StandardSchemaV1Props}; see
+ * {@link StandardSchemaV1}.
+ * @group Types
+ * @category Route
+ */
+export interface StandardSchemaV1Types<Input = unknown, Output = Input> {
+  readonly input: Input;
+  readonly output: Output;
+}
+
+/**
+ * The search a link passes to a route: the level's own
+ * {@link Route.search search schema} INPUT — the URL-side type, what the
+ * query string degrades into before the schema coerces/defaults it —
+ * or the loose {@link SearchInput} when the level declares no schema or
+ * the schema's static type carries no input(see
+ * {@link StandardSchemaV1}). The output-side twin consumed by
+ * `data`/`beforeLoad` is {@link RouteSearchOf}.
+ *
+ * Input, not output, is the honest contract for a link: the link
+ * serializes(`String()`-ed, arrays repeating the key) and the schema
+ * validates the result exactly as it would a hand-written URL, so a
+ * field the schema accepts only as a coerced output(a `Date`, a
+ * transformed enum) is not offerable here — a coerce-flavored schema
+ * (`z.coerce.number()`, input `unknown`) checks keys and leaves values
+ * loose, a strict one checks values too.
+ * @group Types
+ * @category Route
+ */
+export type RouteSearchInputOf<R> = R extends {
+  search: StandardSchemaV1<infer Input, any>;
+}
+  ? [unknown] extends [Input]
+    ? SearchInput
+    : Input
+  : SearchInput;
 
 /**
  * Active state passed to the render-prop / callback flavors of

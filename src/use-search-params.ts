@@ -14,6 +14,7 @@ import type {
 } from '@native-router/core';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
 import {useRouter} from './components/Router';
+import {stringifySearch} from './components/link-behavior';
 
 type SetSearchParams = (
   next: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams),
@@ -135,19 +136,6 @@ export function useSetSearch<S extends StandardSchemaV1>(
     },
     [router, schema]
   );
-}
-
-function stringifySearch(input: Record<string, unknown>): string {
-  return Object.entries(input)
-    .filter(([, value]) => value !== undefined && value !== null)
-    .map(([key, value]) =>
-      (Array.isArray(value) ? value : [value])
-        .map(
-          (v) => `${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`
-        )
-        .join('&')
-    )
-    .join('&');
 }
 
 function setSearch(

@@ -43,6 +43,46 @@ export function interpolatePath(
   );
 }
 
+/**
+ * Serialize a search object into a query string: array values repeat the
+ * key, `undefined`/`null` entries are dropped, everything else is
+ * `String()`-ed and percent-encoded — the write-side inverse of the
+ * core's `parseSearchInput` degradation, so a serialized search parses
+ * back to the same shape(strings, arrays for repeated keys).
+ *
+ * Shared by the schema-aware search setters(see `useSetSearch`) and the
+ * typed link family's `search` prop(see {@link appendSearch}).
+ * @group Components
+ */
+export function stringifySearch(search: Record<string, unknown>): string {
+  return Object.entries(search)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) =>
+      (Array.isArray(value) ? value : [value])
+        .map(
+          (v) => `${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`
+        )
+        .join('&')
+    )
+    .join('&');
+}
+
+/**
+ * Append a search object to a target path as a query string — the typed
+ * link family's `search` prop landing on the very target the href
+ * preview, the prefetch and the click navigation all consume. An absent
+ * or empty search leaves the target untouched; an existing query string
+ * is extended with `&` instead of a second `?`.
+ * @group Components
+ */
+export function appendSearch(
+  to: string,
+  search: Record<string, unknown> | undefined
+): string {
+  const qs = search && stringifySearch(search);
+  return qs ? `${to}${to.includes('?') ? '&' : '?'}${qs}` : to;
+}
+
 export function shouldNavigate(
   e: {
     button: number;

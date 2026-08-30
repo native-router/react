@@ -30,6 +30,7 @@ import type {
   NavLinkProps,
   Route,
   RoutePaths,
+  RouteSearchInputOf,
   SearchInput,
   StandardSchemaV1,
   TypedLinkProps,
@@ -408,6 +409,159 @@ describe('TypedPrefetchLink', () => {
     />;
     // @ts-expect-error variant is required by PillLink
     <TypedPrefetchLink<Paths, typeof PillLink> to="/" prefetch="render" />;
+  });
+});
+
+// 任务：TypedLink 家族 search 类型化——组件收整个路由表作类型实参
+// （TypedLink<typeof routes>）时，to/params/search 三位一体判别：search
+// 取该模式叶子层 schema 的 INPUT（~standard.types 幻影对，zod/valibot/
+// arktype 均携带；react 重导出的 StandardSchemaV1 含该可选成员），
+// 无 schema 的模式保持宽松 SearchInput。paths-union 老用法
+// （TypedLink<RoutePaths<...>>）search 宽松，零影响兼容。
+describe('TypedLink search typing', () => {
+  // 注解风格夹具：StandardSchemaV1<Input, Output>（react 重导出的
+  // spec 完整形）——注解本身就把 input 带进静态形状，无需运行时值。
+  // URL 侧 input：page 是 string（schema 会 coerce），tag 重复键成数组。
+  const listSearch: StandardSchemaV1<
+    {page?: string; tag?: string[]},
+    {page: number; tag: string[]}
+  > = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value) => ({
+        value: value as {page: number; tag: string[]}
+      })
+    }
+  };
+
+  const routes = createRoutes({
+    children: [
+      {path: '/list', search: listSearch, component: () => Page},
+      {path: '/plain', component: () => Page},
+      {path: '/users/:id', search: listSearch, component: () => Page},
+      {
+        path: '/section',
+        children: [{path: '/inner', search: listSearch, component: () => Page}]
+      }
+    ]
+  });
+  type Table = typeof routes;
+
+  it('should derive RouteSearchInputOf from the schema input side', () => {
+    type ListRoute = NonNullable<Table['children']>[0];
+    expectTypeOf<ListRoute['path']>().toEqualTypeOf<'/list'>();
+    expectTypeOf<RouteSearchInputOf<ListRoute>>().toEqualTypeOf<{
+      page?: string;
+      tag?: string[];
+    }>();
+  });
+
+  it('should degrade RouteSearchInputOf to SearchInput without input info', () => {
+    // 无 schema 的层：宽松 SearchInput。
+    type PlainRoute = NonNullable<Table['children']>[1];
+    expectTypeOf<RouteSearchInputOf<PlainRoute>>().toEqualTypeOf<SearchInput>();
+    // core 风格注解（input 位 unknown，无 types 承载）：同样拿不到 → 宽松。
+    const bareSearch: StandardSchemaV1<unknown, {page: number}> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: (value) => ({value: value as {page: number}})
+      }
+    };
+    const bare = createRoutes({
+      children: [{path: '/bare', search: bareSearch, component: () => Page}]
+    });
+    void bare;
+    expectTypeOf<
+      RouteSearchInputOf<NonNullable<(typeof bare)['children']>[number]>
+    >().toEqualTypeOf<SearchInput>();
+  });
+
+  it('should accept the schema input and keep search optional', () => {
+    const app = (
+      <MemoryRouter routes={routes}>
+        <TypedLink<Table> to="/list" search={{page: '2'}} />
+        <TypedLink<Table> to="/list" search={{tag: ['a', 'b']}} />
+        {/* search 可省略：不传零影响 */}
+        <TypedLink<Table> to="/list" />
+        {/* params 与 search 在同一模式上联合判别 */}
+        <TypedLink<Table>
+          to="/users/:id"
+          params={{id: '7'}}
+          search={{page: '1'}}
+        />
+        <View />
+      </MemoryRouter>
+    );
+    expectTypeOf(app).not.toBeNever();
+  });
+
+  it('should reject a search the pattern schema contradicts', () => {
+    // @ts-expect-error nope 不是 /list schema input 的字段
+    <TypedLink<Table> to="/list" search={{nope: 'x'}} />;
+    // @ts-expect-error page 的 input 是 string，不是 number
+    <TypedLink<Table> to="/list" search={{page: 2}} />;
+    // @ts-expect-error /users/:id 的 schema 同样拒收未知字段（与 params 联合判别）
+    <TypedLink<Table>
+      to="/users/:id"
+      params={{id: '7'}}
+      search={{nope: 'x'}}
+    />;
+  });
+
+  it('should keep schema-less patterns loose and still check params', () => {
+    <TypedLink<Table> to="/plain" search={{anything: 'goes', n: ['1']}} />;
+    // @ts-expect-error params 仍按模式判别，search 不豁免缺参
+    <TypedLink<Table> to="/users/:id" search={{page: '1'}} />;
+  });
+
+  it('should carry the search typing through layout prefixes', () => {
+    <TypedLink<Table> to="/section/inner" search={{page: '3'}} />;
+    // @ts-expect-error 前缀拼接后的模式仍持有叶子层 schema input
+    <TypedLink<Table> to="/section/inner" search={{nope: 'x'}} />;
+  });
+
+  it('should keep search loose in the paths-union and degraded flavors', () => {
+    type Paths = RoutePaths<Table>;
+    // paths union 不携带 schema：search 退化为 SearchInput（URL 输入形状）。
+    <TypedLink<Paths> to="/list" search={{page: '2'}} />;
+    // @ts-expect-error 宽松 ≠ 任意：SearchInput 只收 string | string[]
+    <TypedLink<Paths> to="/list" search={{page: 2}} />;
+    // 完全退化（无类型实参）同宽。
+    <TypedLink to="/list" search={{page: '2'}} />;
+  });
+
+  it('should type search on TypedNavLink and TypedPrefetchLink alike', () => {
+    <TypedNavLink<Table> to="/list" search={{page: '2'}} end />;
+    // @ts-expect-error 同一判别联合
+    <TypedNavLink<Table> to="/list" search={{page: 2}} />;
+    <TypedPrefetchLink<Table>
+      to="/list"
+      search={{tag: ['x']}}
+      prefetch="render"
+    />;
+    // @ts-expect-error 同一判别联合
+    <TypedPrefetchLink<Table>
+      to="/list"
+      prefetch="render"
+      search={{nope: 'x'}}
+    />;
+  });
+
+  it('should keep search checked through an as component', () => {
+    <TypedLink<Table, typeof PillLink>
+      to="/list"
+      search={{page: '2'}}
+      variant="primary"
+    />;
+    // as 组合不放松 search 判别：错误钉在属性上（number → string input）。
+    <TypedLink<Table, typeof PillLink>
+      to="/list"
+      variant="primary"
+      // @ts-expect-error page 的 input 是 string，不是 number
+      search={{page: 2}}
+    />;
   });
 });
 

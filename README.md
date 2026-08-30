@@ -76,7 +76,7 @@ function Preview({visible}: {visible: boolean}) {
 - `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — `data` loaders and `beforeLoad` guards receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
 - Search type closure: `createRoutes(routes)` re-types the returned table so every level's `data`/`beforeLoad` `ctx.search` derives from the level's own schema — no `Route<P, S>` generics or callback annotations needed; an explicit `Route<P, S>` generic still wins wherever written
-- Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop; `TypedNavLink`/`TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links
+- Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop; `TypedNavLink`/`TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links. Give the link the whole table — `<TypedLink<typeof routes>>` — and `search` joins the discrimination too, typed by the pattern's route schema input(Standard Schema `~standard.types`, zod/valibot/arktype), serialized into the href and the navigation target; schema-less patterns keep `search` loose, and the paths-union flavor is untouched
 - Router context: a `context` prop on the Router components (or a `context` option on `createRouter`) bakes in one synchronous value per router instance, handed to every `data` loader and `beforeLoad` guard as `ctx.context` — per-instance deps (API client, config, i18n) without a module singleton; omit it and the context is `undefined`, existing setups unchanged
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
@@ -384,7 +384,35 @@ type AppPaths = RoutePaths<typeof routes>; // '/' | '/users/:id' | '/files/*rest
 
 At click time the params are interpolated into the pattern (values percent-encoded, wildcard segments joined with `/`); a missing required param throws instead of navigating — the runtime backstop of the type-level check. An `as Route` assertion widens every `path` to `string`, so `RoutePaths` degrades to `string` and `TypedLink` accepts any path, exactly like a plain `Link` — the migration is opt-in.
 
-`TypedNavLink` and `TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links — `to` narrowed to the table, `params` checked per pattern, and every `NavLink`/`PrefetchLink` capability (`end`, `caseSensitive`, active-state `className`/`style`/`children` callbacks, `ariaCurrent`, the `prefetch` strategies) kept:
+`search` joins the check when you give the link the whole table instead of the paths union: `TypedLink<typeof routes>` types `search` by each pattern's route schema **input** (the URL-side type, extracted from the Standard Schema `~standard.types` pair that zod/valibot/arktype carry), while `TypedLink<RoutePaths<...>>` keeps working exactly as before with `search` loose:
+
+```tsx
+import {TypedLink, createRoutes} from '@native-router/react';
+
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  children: [
+    {
+      path: '/articles',
+      search: z.object({page: z.coerce.number(), tag: z.string().optional()}),
+      component: () => import('./Articles')
+    },
+    {path: '/users/:id', component: () => import('./UserProfile')}
+  ]
+});
+
+<TypedLink<typeof routes> to="/articles" search={{page: 2, tag: 'react'}}>
+  Page 2
+</TypedLink>
+// @ts-expect-error 'ppage' is not a field of the schema input
+<TypedLink<typeof routes> to="/articles" search={{ppage: 2}} />
+// schema-less patterns stay loose: any SearchInput passes
+<TypedLink<typeof routes> to="/users/:id" params={{id: '7'}} search={{from: 'list'}} />
+```
+
+At click time the search is serialized into the query string (values `String()`-ed, arrays repeating the key, `undefined`/`null` dropped) and the route's schema validates the result on resolve exactly like a hand-written URL — an invalid search fails the level through the existing error layers. Schemas without the input pair (a bare `validate`, older vendors) degrade `search` to the loose `SearchInput` instead of erroring.
+
+`TypedNavLink` and `TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links — `to` narrowed to the table, `params` and `search` checked per pattern, and every `NavLink`/`PrefetchLink` capability (`end`, `caseSensitive`, active-state `className`/`style`/`children` callbacks, `ariaCurrent`, the `prefetch` strategies) kept:
 
 ```tsx
 import {TypedNavLink} from '@native-router/react';

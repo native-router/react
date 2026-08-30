@@ -2761,3 +2761,202 @@ describe('TypedPrefetchLink', () => {
     consoleError.mockRestore();
   });
 });
+
+// 任务：TypedLink 家族 search prop——运行时把 search 对象序列化进目标
+// （值 String()-化、数组重复键、undefined/null 丢弃），href 预览、预取与
+// 点击导航消费同一目标；路由 schema 在 resolve 时像手写 URL 一样校验
+// coerce 结果。类型层判别见 test/types.test.tsx 的 search typing describe。
+describe('TypedLink search', () => {
+  // 与 `search schema` 套件同款的 coerce 夹具，input 侧是 URL 形状
+  // （string / string[]），output 侧 coerce 成 number。
+  const pageSearch: StandardSchemaV1<
+    {page?: string; tag?: string[]},
+    {page: number; tag: string[]}
+  > = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value) => {
+        const input = value as {page?: string; tag?: string[]};
+        const page = Number(input.page ?? '1');
+        return {
+          value: {
+            page: Number.isFinite(page) && page > 0 ? Math.floor(page) : 1,
+            tag: input.tag ?? []
+          }
+        };
+      }
+    }
+  };
+
+  const seen: {page: number; tag: string[]}[] = [];
+  function SearchPage() {
+    const search = useData() as {page: number; tag: string[]};
+    return <div>page:{search.page}</div>;
+  }
+
+  const routes = createRoutes({
+    children: [
+      {path: '/', component: () => Home},
+      {
+        path: '/list',
+        search: pageSearch,
+        component: () => SearchPage,
+        data: ({search}) => {
+          seen.push(search);
+          return search;
+        }
+      },
+      {path: '/users/:id', component: () => Page}
+    ]
+  });
+
+  beforeEach(() => {
+    seen.length = 0;
+  });
+
+  it('should serialize search into the href and navigate the same target', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <TypedLink<typeof routes>
+          to="/list"
+          search={{page: '2', tag: ['a', 'b']}}
+          data-testid="list-link"
+        >
+          List
+        </TypedLink>
+        <View />
+      </Router>
+    );
+    await flush();
+    // Arrays repeat the key; values percent-encoded on the way out.
+    expect(screen.getByTestId('list-link').getAttribute('href')).toBe(
+      '/list?page=2&tag=a&tag=b'
+    );
+
+    fireEvent.click(screen.getByTestId('list-link'));
+    await flush();
+    expect(history.location.search).toBe('?page=2&tag=a&tag=b');
+    // The route schema coerced the serialized input like a hand-written URL.
+    expect(seen.at(-1)).toEqual({page: 2, tag: ['a', 'b']});
+    expect(screen.getByText('page:2')).toBeDefined();
+  });
+
+  it('should drop undefined/null entries and skip an empty search', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        {/* 数字值照 String() 化（宽松/退化调用的运行时口径） */}
+        <TypedLink<typeof routes>
+          to="/list"
+          search={{page: '3'}}
+          data-testid="num-link"
+        >
+          3
+        </TypedLink>
+        <TypedLink<typeof routes>
+          to="/list"
+          search={{}}
+          data-testid="empty-link"
+        >
+          empty
+        </TypedLink>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByTestId('num-link').getAttribute('href')).toBe(
+      '/list?page=3'
+    );
+    expect(screen.getByTestId('empty-link').getAttribute('href')).toBe('/list');
+  });
+
+  it('should extend an existing query string with & instead of a second ?', async () => {
+    // Untyped-caller shape: a `to` already carrying a query string.
+    const LooseLink = TypedLink as unknown as (props: {
+      to: string;
+      search?: Record<string, unknown>;
+      'data-testid'?: string;
+      children?: React.ReactNode;
+    }) => React.ReactElement;
+    render(
+      <MemoryRouter routes={routes}>
+        <LooseLink
+          to="/list?keep=1"
+          search={{page: '4', gone: undefined}}
+          data-testid="joined-link"
+        >
+          joined
+        </LooseLink>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(screen.getByTestId('joined-link').getAttribute('href')).toBe(
+      '/list?keep=1&page=4'
+    );
+  });
+
+  it('should land search on TypedNavLink alongside params without affecting matching', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <TypedNavLink<typeof routes>
+          to="/users/:id"
+          params={{id: '7'}}
+          search={{page: '5'}}
+          data-testid="user-link"
+        >
+          User7
+        </TypedNavLink>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByTestId('user-link').getAttribute('href')).toBe(
+      '/users/7?page=5'
+    );
+
+    fireEvent.click(screen.getByTestId('user-link'));
+    await flush();
+    expect(history.location.pathname).toBe('/users/7');
+    expect(history.location.search).toBe('?page=5');
+    // Active state follows the interpolated pathname; search never matches.
+    expect(screen.getByTestId('user-link').getAttribute('aria-current')).toBe(
+      'page'
+    );
+  });
+
+  it('should prefetch and commit the search-carrying target', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <View />
+        <TypedPrefetchLink<typeof routes>
+          to="/list"
+          search={{page: '6'}}
+          prefetch="render"
+          data-testid="prefetch-link"
+        >
+          List
+        </TypedPrefetchLink>
+      </Router>
+    );
+    await flush();
+    expect(screen.getByTestId('prefetch-link').getAttribute('href')).toBe(
+      '/list?page=6'
+    );
+    // 'render' prefetched the entry; the loader already saw the search.
+    expect(seen.at(-1)).toEqual({page: 6, tag: []});
+
+    fireEvent.click(screen.getByTestId('prefetch-link'));
+    await flush();
+    expect(history.location.search).toBe('?page=6');
+    expect(screen.getByText('page:6')).toBeDefined();
+  });
+});
