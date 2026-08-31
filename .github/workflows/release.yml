@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      # Tests and docs ride along releases too: a feat commit touching
+      # only these would otherwise be swallowed by the path filter and
+      # never published (semantic-release itself no-ops safely on
+      # commits with no releasable notes).
+      - "test/**"
+      - "README*.md"
       - "package.json"
       - ".github/workflows/release.yml"
 

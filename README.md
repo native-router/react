@@ -81,7 +81,7 @@ function Preview({visible}: {visible: boolean}) {
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - `viewTransition` prop on the Router components opts navigation into the browser's View Transitions API: `true` animates push navigations only, a predicate decides per navigation on `{action, to, from}`; the direction rides the transition `types` for `:active-view-transition-type(push|pop)` CSS, and unsupported browsers degrade to plain navigation
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
-- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
+- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes — derive the annotation from the loader with `RouteDataOf` instead of hand-writing it), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
 - Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
 - Route-level `pendingComponent` skeleton, shown only when no previous view can be retained (cold start, refresh, re-navigation after an error); the nearest matched ancestor's wins, and in-app navigation keeps the previous view instead
   - Keeping the previous view during in-app navigation is an intentional design following browser-native semantics — see the Design Principles section of the core repository's README
@@ -249,14 +249,63 @@ Respect `prefers-reduced-motion`:
 - Transition `types` (the direction tags): Chrome/Edge 129+, Safari 18.2+ — probed once by behavior (a callback-only implementation throws a synchronous `TypeError` on the options form); elsewhere the transition still runs, just without direction types, so `:active-view-transition-type(...)` selectors stop matching
 - No View Transitions at all (jsdom, older browsers): plain navigation, nothing happens
 
-## Why `useData` is typed manually
+## Typing `useData`
 
 `useData<T>()` annotations have no compile-time link to the route's `data` loader — the annotation *is* the contract. That is deliberate. Two closure schemes were evaluated (2026-08) and rejected:
 
 - **A from-argument** (`useData('/articles/:slug')`, indexing a route-table map by path literal — TanStack's `useLoaderData({from})` shape). Rejected: it makes every view aware of the path it happens to be mounted under. Matching data to a view is the route configuration's job; a view should know what it renders, not where it is mounted.
 - **A data-props protocol** — constrain `component` to `ComponentType<{data: D}>` and let `createRoutes` check the loader output against it at the config site. The check lands at the right layer, but deep children would then need prop drilling to reach the data.
 
-What stays: path-agnostic views, no prop drilling, one local annotation. Revisit only if TypeScript or the library later offers a channel that couples neither paths nor props.
+What stays: path-agnostic views, no prop drilling, one local annotation.
+
+The channel that couples neither paths nor props arrived as a type helper: `RouteDataOf` derives the annotation from the loader itself — the same reference the route table hangs — so it cannot drift from what `route.data` resolves:
+
+```tsx
+const loadUser = ({params, signal}) =>
+  userService.fetchById(+params.id, {signal}); // → Promise<User>
+
+{path: '/users/:id', data: loadUser, component: () => UserView}
+
+// UserView — still one local annotation, now checked instead of asserted
+const user = useData<RouteDataOf<typeof loadUser>>(); // User | undefined
+```
+
+Zero runtime, zero new call-site arguments. Each level of a nested chain types through its own loader (the runtime's nearest-provider rule — a view reads the data of its own matched level), a level without `data` reads `undefined`, and anything the helper cannot resolve degrades to `unknown` — the bare `useData()` width — never a compile error. A hand-written `useData<Article>()` keeps priority wherever it is written.
+
+## Data loading recipe
+
+Bare loaders plus `useData<RouteDataOf<...>>()` carry simple tables a long way. When an app grows — entity caches, DevTool mocks, mutations that must address the same data the route loaders produced — the pattern that scales is a per-entity triple: one factory call binds the same fetch to the route table, the view read and the component/mutation channel at once:
+
+```tsx
+// [loader, useData, queryFn] — one declaration per entity
+const [loadArticle, useArticle, queryArticle] = createDataLoader({
+  fetch: (slug: string, signal?: AbortSignal) =>
+    api.get(`/articles/${slug}`, {signal}), // the one fetch
+  cache: articleCache, // keyed entity cache: [slug] → Article
+  keyOf: (ctx) => [ctx.params.slug], // route ctx → cache key, defined once
+  staleTime: 30_000
+});
+
+// the route table hangs the loader by reference
+{path: '/articles/:slug', data: loadArticle, component: () => ArticleView}
+
+// the view reads typed by the same loader, optionality in the return type
+const article = useArticle(); // Article — this route declares the loader
+const maybe = useArticle({optional: true}); // Article | undefined — a shared
+// component may also be mounted under a route without the loader
+
+// reads outside the route lifecycle and mutations address the same entity
+const fresh = useQuery(queryArticle, [slug]);
+invalidate(queryArticle, [slug]);
+```
+
+Why one factory for the three:
+
+- **`loader`** — what the route table hangs, by reference. The reference identity doubles as a DEV source check: in the hook, `route.data === loadArticle` proves the view reads what this loader resolved. Declaration identity, not a result fingerprint — the same loader under different params, optimistic writes and stale-while-revalidate's old-value-first all fake a fingerprint.
+- **`useData`** — the view read with the required/optional split carried in the return type: a bare call asserts the route declares this loader, so data is resolved before the view mounts (pending and errors are handled by `pendingComponent`/`errorComponent`); `{optional: true}` covers shared components that may also render under routes without the loader.
+- **`queryFn`** — the same fetch × cache bound for reads outside the route lifecycle; mutations write and invalidate through the same key the loader resolves, so the route channel and the component channel cannot drift apart.
+
+The factory itself is application glue — cache library, mock layer, DEV checks — not router API. It is extracted from **painless**, the reference SPA template built on this router (see its `src/util/dataLoader.ts` for the full implementation: double-channel caching, DevTool mocks and the DEV identity check included).
 
 ## Install
 

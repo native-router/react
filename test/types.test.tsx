@@ -23,12 +23,14 @@ import {
   View,
   createRouter,
   createRoutes,
-  useBlocker
+  useBlocker,
+  useData
 } from '../src/index';
 import type {
   LinkProps,
   NavLinkProps,
   Route,
+  RouteDataOf,
   RoutePaths,
   RouteSearchInputOf,
   SearchInput,
@@ -798,5 +800,127 @@ describe('useBlocker predicate contract', () => {
       // @ts-expect-error a truthy string is not a boolean verdict
       dirtyRef.current ? 'dirty' : '';
     void fn;
+  });
+});
+
+// 任务：useData 类型推断链——`route.data` loader 的返回类型经 RouteDataOf
+// 流入 useData 的类型实参。useData 本体签名不动（零运行时改动），推断
+// 走「loader 引用」通道：视图以它自己声明的 loader 取型（与 README
+// 「`useData` 的类型标注」否决的路径/props 两条路线都不耦合）。
+// 嵌套链语义与运行时最近 Provider 对齐：每层只看自己的 loader，无 data
+// 的层是 undefined，非层级/非 loader 输入一律 unknown 宽松回落——推断
+// 失败退化为裸 useData() 的宽度，不在调用点炸编译错误。
+describe('RouteDataOf / useData data typing', () => {
+  type User = {id: number; name: string};
+  type Section = {title: string};
+
+  const user: User = {id: 7, name: 'ada'};
+  const section: Section = {title: 's'};
+
+  it('should infer the awaited loader return of a single-level route', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/users/:id',
+          data: () => Promise.resolve(user),
+          component: () => Page
+        },
+        // 同步 loader 同样成立：Awaited 直通非 Promise 返回
+        {path: '/sync', data: () => user, component: () => Page}
+      ]
+    });
+    void routes;
+    type UserRoute = NonNullable<(typeof routes)['children']>[0];
+    type SyncRoute = NonNullable<(typeof routes)['children']>[1];
+    expectTypeOf<RouteDataOf<UserRoute>>().toEqualTypeOf<User>();
+    expectTypeOf<RouteDataOf<SyncRoute>>().toEqualTypeOf<User>();
+    // 推断链落到视图读取：useData<RouteDataOf<…>>() 的返回类型
+    function UserView() {
+      const data = useData<RouteDataOf<UserRoute>>();
+      expectTypeOf(data).toEqualTypeOf<User | undefined>();
+      return null;
+    }
+    void UserView;
+  });
+
+  it('should infer from a standalone loader reference', () => {
+    type LoaderCtx = Parameters<NonNullable<Route['data']>>[0];
+    const loadUser = (ctx: LoaderCtx): Promise<User> =>
+      Promise.resolve(ctx.params.id ? user : user);
+    const table = createRoutes({
+      children: [{path: '/users/:id', data: loadUser, component: () => Page}]
+    });
+    void table;
+    // 挂表前后的同一引用同型——route.data === loadUser 的类型层对应物
+    expectTypeOf<RouteDataOf<typeof loadUser>>().toEqualTypeOf<User>();
+    type HungRoute = NonNullable<(typeof table)['children']>[number];
+    expectTypeOf<RouteDataOf<HungRoute>>().toEqualTypeOf<User>();
+  });
+
+  it('should type each nested level from its own loader', () => {
+    const routes = createRoutes({
+      // 布局层自己的 loader：data 与 children 并存仍读本层
+      data: () => Promise.resolve(section),
+      children: [
+        {
+          path: '/nested',
+          data: () => Promise.resolve(user),
+          children: [{path: '/leaf', component: () => Page}]
+        }
+      ]
+    });
+    void routes;
+    type Root = typeof routes;
+    type Nested = NonNullable<Root['children']>[number];
+    type Leaf = NonNullable<NonNullable<Nested['children']>[number]>;
+    expectTypeOf<RouteDataOf<Root>>().toEqualTypeOf<Section>();
+    expectTypeOf<RouteDataOf<Nested>>().toEqualTypeOf<User>();
+    // 无 data 的层：useData() 在该层组件里就是 undefined（最近 Provider）
+    expectTypeOf<RouteDataOf<Leaf>>().toEqualTypeOf<undefined>();
+  });
+
+  it('should fall back loosely where no single data type exists', () => {
+    const table = createRoutes([
+      {path: '/a', data: () => Promise.resolve(user), component: () => Page},
+      {path: '/b', component: () => Page}
+    ]);
+    void table;
+    // 数组表不是一个层级：unknown，与裸 useData() 同宽
+    expectTypeOf<RouteDataOf<typeof table>>().toBeUnknown();
+    // 手写 as Route 的老表：data 是宽松可选签名 → unknown 回落，不报错
+    const legacy = {path: '/x', data: () => Promise.resolve(user)} as Route;
+    void legacy;
+    expectTypeOf<RouteDataOf<typeof legacy>>().toBeUnknown();
+    // 非 route/loader 输入：unknown——推断失败不炸穿调用点
+    expectTypeOf<RouteDataOf<string>>().toBeUnknown();
+    expectTypeOf<RouteDataOf<number>>().toBeUnknown();
+  });
+
+  it('should keep an explicit generic in charge and bare calls loose', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/users/:id',
+          data: () => Promise.resolve(user),
+          component: () => Page
+        }
+      ]
+    });
+    void routes;
+    type UserRoute = NonNullable<(typeof routes)['children']>[number];
+    type Article = {slug: string};
+    function Views() {
+      // 显式泛型优先：与 loader 推断无关，向后兼容的老用法
+      const article = useData<Article>();
+      expectTypeOf(article).toEqualTypeOf<Article | undefined>();
+      // 裸调用保持现状：unknown
+      const loose = useData();
+      expectTypeOf(loose).toBeUnknown();
+      // 具名读取（祖先具名数据）签名原样：name 实参与类型实参正交
+      const named = useData<RouteDataOf<UserRoute>>('user');
+      expectTypeOf(named).toEqualTypeOf<User | undefined>();
+      return null;
+    }
+    void Views;
   });
 });

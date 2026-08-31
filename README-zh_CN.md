@@ -81,7 +81,7 @@ function Preview({visible}: {visible: boolean}) {
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - `viewTransition` prop 让导航接入浏览器 View Transitions API：`true` 仅对 push 导航做动画，谓词按 `{action, to, from}` 逐次判定；方向感通过过渡 `types` 交给 `:active-view-transition-type(push|pop)` CSS 消费，不支持的浏览器降级为普通导航
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
-- Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决——谓词是放行语义，返回 `true` 放行导航、`false` 否决导航，不是「返回 true 阻止」；组件挂载期间注册、始终以最新闭包被询问；每次否决都记录在返回值的 `blocker.state` 上，并带 `proceed()`/`reset()` 通道——`proceed()` 重试被否决的导航，仅绕过本 hook 自己的 blocker，确认框场景三行搞定）
+- Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据——注解可用 `RouteDataOf` 从 loader 推导，不必手写）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决——谓词是放行语义，返回 `true` 放行导航、`false` 否决导航，不是「返回 true 阻止」；组件挂载期间注册、始终以最新闭包被询问；每次否决都记录在返回值的 `blocker.state` 上，并带 `proceed()`/`reset()` 通道——`proceed()` 重试被否决的导航，仅绕过本 hook 自己的 blocker，确认框场景三行搞定）
 - 两层错误处理、两个阶段：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）——`errorComponent` 既渲染 resolve 期失败（loader/守卫/search，无 `ctx.phase`），也渲染组件子树的渲染期抛错（`ctx.phase === 'render'`，由路由级错误边界捕获，渲染崩溃不会越过路由炸到 React 根，正如浏览器对任何加载失败都有错误页）
 - 路由级 `pendingComponent` 骨架屏：仅当没有可保留的旧视图时（冷启动、刷新、错误后的重新导航）渲染，取匹配链上最近祖先的；应用内导航依旧保留旧视图，不会闪骨架屏
   - 应用内导航保留旧视图是浏览器原生语义的有意设计，见 core 仓库 README 的设计原则章节
@@ -249,14 +249,63 @@ import {HistoryRouter as Router, View} from '@native-router/react';
 - 过渡 `types`（方向标签）：Chrome/Edge 129+、Safari 18.2+——通过一次性行为探测识别（只接受 callback 的旧实现对 options 形态同步抛 `TypeError`）；其余环境过渡照常运行，只是没有方向 type，`:active-view-transition-type(...)` 选择器不再命中
 - 完全没有 View Transitions（jsdom、旧浏览器）：普通导航，什么也不发生
 
-## 为什么 `useData` 手动标注类型
+## `useData` 的类型标注
 
 `useData<T>()` 的注解与路由 `data` loader 的返回类型没有编译期关联——注解本身就是契约。这是刻意为之。评估过两种闭环方案（2026-08），均被否决：
 
 - **from 参数**（`useData('/articles/:slug')`，按路径字面量索引路由表映射——TanStack `useLoaderData({from})` 的形态）：否决。它迫使每个视图感知自己恰好被挂载到哪个路径下。数据与视图的匹配是路由配置层的职责；视图应该知道「我渲染什么」，而不是「我被挂载在哪」。
 - **data-props 协议**：把 `component` 约束为 `ComponentType<{data: D}>`，由 `createRoutes` 在配置处检查 loader 输出与之匹配。检查点落在了正确的层，但深层子组件此后需要 props 逐层透传才能拿到数据。
 
-保留现状：视图不感知路径、无 props 透传、仅一处局部注解。仅当 TypeScript 或本库日后出现既不耦合路径也不透传 props 的通道时再议。
+保留现状：视图不感知路径、无 props 透传、仅一处局部注解。
+
+既不耦合路径也不透传 props 的通道后来以类型工具的形态落地：`RouteDataOf` 从 loader 本身推导注解——路由表挂的就是同一个引用——注解因此不可能偏离 `route.data` 实际 resolve 的类型：
+
+```tsx
+const loadUser = ({params, signal}) =>
+  userService.fetchById(+params.id, {signal}); // → Promise<User>
+
+{path: '/users/:id', data: loadUser, component: () => UserView}
+
+// UserView —— 仍是一处局部注解，但从「断言」变成「校验」
+const user = useData<RouteDataOf<typeof loadUser>>(); // User | undefined
+```
+
+零运行时、零新增调用点参数。嵌套链上每层经自己的 loader 取型（与运行时最近 Provider 规则对齐——视图读到的是自己所在层的数据），无 `data` 的层读作 `undefined`，工具解析不了的一切输入退化为 `unknown`——裸 `useData()` 的宽度——绝不变成编译错误。手写 `useData<Article>()` 在写出的地方始终优先。
+
+## 数据加载配方
+
+裸 loader 加 `useData<RouteDataOf<...>>()` 足以支撑简单路由表。当应用长大——实体缓存、DevTool 造数、mutation 要寻址路由 loader 产出的同一份数据——可扩展的形态是按实体收敛的三元组：一次工厂调用把同一个 fetch 同时绑定到路由表、视图读取和组件/mutation 通道：
+
+```tsx
+// [loader, useData, queryFn] —— 每实体一次声明
+const [loadArticle, useArticle, queryArticle] = createDataLoader({
+  fetch: (slug: string, signal?: AbortSignal) =>
+    api.get(`/articles/${slug}`, {signal}), // 唯一的 fetch
+  cache: articleCache, // 按 key 的实体缓存：[slug] → Article
+  keyOf: (ctx) => [ctx.params.slug], // 路由 ctx → 缓存 key，只此一处定义
+  staleTime: 30_000
+});
+
+// 路由表按引用挂 loader
+{path: '/articles/:slug', data: loadArticle, component: () => ArticleView}
+
+// 视图读取与同一 loader 同型，optionality 体现在返回类型上
+const article = useArticle(); // Article —— 本路由声明了该 loader
+const maybe = useArticle({optional: true}); // Article | undefined —— 共用
+// 组件也可能被挂在没挂该 loader 的路由下
+
+// 路由生命周期之外的读取与 mutation 寻址同一实体
+const fresh = useQuery(queryArticle, [slug]);
+invalidate(queryArticle, [slug]);
+```
+
+为什么一个工厂收拢三者：
+
+- **`loader`** —— 路由表按引用挂载的东西。引用身份兼任 DEV 来源校验：hook 内 `route.data === loadArticle` 证明视图读到的就是本 loader resolve 的值。声明身份而非结果指纹——同 loader 不同参数、乐观写穿、SWR 旧值先行三个场景都会伪造指纹。
+- **`useData`** —— 视图读取，必有/可选语义收进返回类型：裸调用断言本路由声明了该 loader，数据在视图挂载前必已 resolve（pending 与错误由 `pendingComponent`/`errorComponent` 接管）；`{optional: true}` 覆盖共用组件也可能渲染在无该 loader 路由下的场景。
+- **`queryFn`** —— 同一 fetch × 缓存的绑定，供路由生命周期之外的读取；mutation 经 loader resolve 的同一 key 写入与失效，路由通道与组件通道因此不会漂移。
+
+工厂本身是应用层胶水——缓存库、mock 层、DEV 校验——不是路由库 API。提炼自基于本路由构建的参考 SPA 模板 **painless**（完整实现见其 `src/util/dataLoader.ts`：双通道缓存、DevTool 造数、DEV 身份校验俱在）。
 
 ## 安装
 

@@ -260,6 +260,71 @@ export type SearchRoutesOf<T> = T extends readonly unknown[]
     : T;
 
 /**
+ * The data a {@link useData} read resolves to for one route level or
+ * its `data` loader: the awaited return type of the loader.
+ *
+ * The channel couples neither paths nor props(see the README's *Typing
+ * `useData`*): a view derives its annotation from the
+ * loader it is written against — the same reference the route table
+ * hangs — so the annotation carries a compile-time link to what
+ * `route.data` resolves and cannot drift:
+ *
+ * ```tsx
+ * const loadUser = ({params, signal}) => api.user(params.id, {signal});
+ * // → Promise<User>
+ * {path: '/users/:id', data: loadUser, component: () => UserView}
+ *
+ * // UserView
+ * const user = useData<RouteDataOf<typeof loadUser>>(); // User | undefined
+ * ```
+ *
+ * Resolution, in order:
+ *
+ * - a loader function → its awaited return type;
+ * - a level with a `data` loader → that loader's awaited return type
+ *   (a level holding both `data` and `children` still reads its own);
+ * - an object level without `data` — the key absent or `undefined` — →
+ *   `undefined`, the value `useData()` returns there at runtime. (Weak
+ *   type checking makes the property pattern below miss such levels —
+ *   no overlapping member — so the miss IS the signal, not a failure);
+ * - anything else — a table array(many levels, no single data type), a
+ *   hand-annotated `Route` whose `data` is the broad optional signature
+ *   (its `any` return collapses here too), a non-route input — →
+ *   `unknown`, the same loose fallback a bare `useData()` has. Inference
+ *   failure degrades to the loose read; it never becomes a compile
+ *   error.
+ *
+ * Per-level semantics mirror the runtime's nearest-provider rule: a view
+ * reads the data of its own matched level, so a nested chain with
+ * loaders at several levels types each level through its own reference
+ * (named data of ancestors is read through `useNamedData`, which stays
+ * manually typed).
+ * @group Types
+ * @category Route
+ */
+export type RouteDataOf<S> = S extends (ctx: any) => infer R
+  ? LoaderReturn<R>
+  : S extends readonly unknown[]
+    ? unknown
+    : S extends object
+      ? S extends {data?: infer D}
+        ? D extends (ctx: any) => infer R
+          ? LoaderReturn<R>
+          : D extends undefined
+            ? undefined
+            : unknown
+        : undefined
+      : unknown;
+
+/**
+ * Await a loader's return, collapsing `any` — widened `as Route` tables,
+ * loosely annotated loaders — into the loose `unknown` fallback instead
+ * of letting it silently switch off checking downstream. Building block
+ * of {@link RouteDataOf}.
+ */
+type LoaderReturn<R> = 0 extends 1 & Awaited<R> ? unknown : Awaited<R>;
+
+/**
  * Union of every navigable path pattern of a route table, computed from
  * the table's type. Each level's `path` literal concatenates with its
  * children's patterns the way the runtime matcher consumes them

@@ -87,9 +87,14 @@ export function useMatched() {
  * Get the resolved `data` of the current route level, or the named data
  * of an ancestor level when `name` is given.
  *
- * Give the generic the expected data type to read it type-safely without
- * a cast: `useData<Article>()` → `Article | undefined`.
+ * Type the read through the loader instead of a hand-written shape —
+ * `useData<RouteDataOf<typeof fetchUser>>()` — and the annotation is
+ * derived from what the route's `data` loader resolves, so it cannot
+ * drift. A hand-written generic keeps priority wherever it is written:
+ * `useData<Article>()` → `Article | undefined`. A bare `useData()` stays
+ * `unknown` — the loose fallback, never a compile error.
  * @group Hooks
+ * @see {@link RouteDataOf}
  */
 export function useData<T = unknown>(name?: string): T | undefined {
   const [data, namedData] = useDataContext();
