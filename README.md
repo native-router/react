@@ -377,6 +377,8 @@ import {ScrollRestoration} from '@native-router/react';
 
 On mount it also sets `history.scrollRestoration` to `manual`: the browser's own `auto` restoration would race the component's restore and pre-scroll while the left entry's offset is still being read, so the component owns scroll restoration for the session (the setting is not reverted on unmount).
 
+Scroll timing is sequenced around view commits and therefore safe with `viewTransition`: the leaving offset is read at the history event — before the view commits, so a shrinking document cannot clamp the saved value — and the restore runs after the landed view has committed (through the view-transition callback when one is open), so `scrollTo` never lands on the outgoing document's height.
+
 Validate and type the search with a schema — any zod/valibot/arktype schema works, the router only speaks [Standard Schema](https://standardschema.dev). Declare it once on the route and the search is parsed during resolve: the `data` loader and the `beforeLoad` guard receive a typed `ctx.search` (coerced numbers, defaults applied), and an invalid search fails the level through the existing error layers — the route `errorComponent`, else the global `errorHandler`.
 
 Build the table with `createRoutes` and the typing closes by itself: the returned table derives every level's `ctx.search` from the level's own schema, so neither the manual `Route<P, S>` generic nor callback annotations are needed. (Callbacks written inside the literal are checked loosely — `ctx.search: any` — since TypeScript cannot contextually type a member from sibling properties; the precise types hold on the returned table, and a callback annotation that contradicts the schema is rejected at the property.)

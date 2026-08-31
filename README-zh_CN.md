@@ -377,6 +377,8 @@ import {ScrollRestoration} from '@native-router/react';
 
 挂载时它还会把 `history.scrollRestoration` 设为 `manual`：浏览器自身的 `auto` 恢复会与组件的恢复竞争、在离开条目的偏移尚未读完时就抢先滚动，因此整个会话期间滚动恢复由组件全权负责（卸载时不回写 `auto`）。
 
+滚动时序围绕视图提交编排，与 `viewTransition` 组合安全：离开偏移在历史事件上读取——早于视图提交，文档收缩钳制不了保存值；恢复在落地视图提交之后执行（过渡打开时经 view-transition 回调），`scrollTo` 不会落在离开文档的高度上被钳制。
+
 用 schema 校验并类型化 search——任何 zod/valibot/arktype schema 都可以，路由只讲 [Standard Schema](https://standardschema.dev)。在路由上声明一次，search 就会在 resolve 期间解析：`data` loader 与 `beforeLoad` 守卫都拿到类型化的 `ctx.search`（数字已转换、默认值已应用），非法 search 则经既有错误层失败——先路由级 `errorComponent`，否则全局 `errorHandler`。
 
 用 `createRoutes` 构建路由表，类型自动闭环：返回表上每层的 `ctx.search` 从该层自己的 schema 推导，`Route<P, S>` 泛型与回调注解都不再需要。（字面量内直接写的回调按宽松 `Route` 检查——`ctx.search: any`——TypeScript 无法用同级属性做上下文类型；精确类型在返回表上成立，与 schema 矛盾的回调注解会在属性处被拒。）

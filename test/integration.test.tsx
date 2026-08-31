@@ -2981,16 +2981,32 @@ describe('View Transitions', () => {
 
   function installStartViewTransition() {
     const calls: RecordedTransition[] = [];
+    let first = true;
     document.startViewTransition = ((arg: unknown) => {
-      calls.push(
+      const record =
         typeof arg === 'function'
           ? {update: arg as () => void}
           : {
               update: (arg as RecordedTransition).update,
               types: (arg as RecordedTransition).types
-            }
-      );
-      return {skipTransition() {}};
+            };
+      calls.push(record);
+      if (first) {
+        // 首个调用是能力探测：真机上 skip 后 ready/finished 以
+        // AbortError reject——mock 如实 reject。若探针没有接住，
+        // vitest 的 unhandled rejection 检测会直接挂掉本用例，
+        // 即泄漏回归。
+        first = false;
+        const skipped = Promise.reject(new Error('Transition was skipped'));
+        return {ready: skipped, finished: skipped, skipTransition() {}};
+      }
+      // 真实过渡的 update 由测试显式驱动；finished 永不落定，避免
+      // 兜底 bail 抢先提交挂起视图（真机上 update 先于 finished）。
+      return {
+        ready: Promise.resolve(),
+        finished: new Promise(() => {}),
+        skipTransition() {}
+      };
     }) as typeof document.startViewTransition;
     return calls;
   }
@@ -3127,20 +3143,17 @@ describe('View Transitions', () => {
       </Router>
     );
     await flush();
-    // 冷启动的两次 replace 通知（预热 + 惰性重解析落位）：谓词均收到
-    // info 并拒绝。
-    expect(infos.map(({action}) => action)).toEqual(['replace', 'replace']);
+    // 冷启动的惰性重解析落位是一次有视图变化的 replace 通知：谓词收到
+    // info 并拒绝（同视图的预热 replace 不再询问谓词——没有可动画的
+    // DOM 变化）。
+    expect(infos.map(({action}) => action)).toEqual(['replace']);
 
     await act(async () => {
       fireEvent.click(screen.getByText('GoPage'));
     });
     await flush();
     // push 被拒绝：直接通知，视图已更新，无动画。
-    expect(infos.map(({action}) => action)).toEqual([
-      'replace',
-      'replace',
-      'push'
-    ]);
+    expect(infos.map(({action}) => action)).toEqual(['replace', 'push']);
     expect(calls).toHaveLength(0);
     expect(screen.getByText('Page')).toBeDefined();
 
@@ -3153,12 +3166,7 @@ describe('View Transitions', () => {
     // 提交）。
     expect(calls).toHaveLength(2);
     expect(calls[1].types).toEqual(['pop']);
-    expect(infos.map(({action}) => action)).toEqual([
-      'replace',
-      'replace',
-      'push',
-      'pop'
-    ]);
+    expect(infos.map(({action}) => action)).toEqual(['replace', 'push', 'pop']);
     // update 未驱动，视图停在旧帧。
     expect(screen.getByText('Page')).toBeDefined();
     act(() => {
@@ -3167,11 +3175,11 @@ describe('View Transitions', () => {
     expect(screen.getByText('Home')).toBeDefined();
 
     // info 三字段准确：push 与 pop 的方向、to/from 各自对应导航两端。
-    const push = infos[2]!;
+    const push = infos[1]!;
     expect(push.action).toBe('push');
     expect(push.to.pathname).toBe('/page');
     expect(push.from.pathname).toBe('/');
-    const pop = infos[3]!;
+    const pop = infos[2]!;
     expect(pop.action).toBe('pop');
     expect(pop.to.pathname).toBe('/');
     expect(pop.from.pathname).toBe('/page');
@@ -3234,6 +3242,146 @@ describe('View Transitions', () => {
       updates[0]();
     });
     expect(screen.getByText('Page')).toBeDefined();
+  });
+
+  describe('× ScrollRestoration', () => {
+    function currentView() {
+      if (screen.queryByText('Page')) return 'Page';
+      if (screen.queryByText('Home')) return 'Home';
+      return 'none';
+    }
+
+    // 缺陷 A 回归（VT 路径）：pop 动画打开期间 gate 持旧帧，滚动恢复必须
+    // 等过渡回调提交落地视图之后——scrollTo 落在旧文档上会被其高度钳制
+    // （真机：旧文章页 docHeight=720 钳掉 scrollTo(0,1011)）。
+    it('should restore the scroll after the gated view commits (VT path)', async () => {
+      const calls = installStartViewTransition();
+      const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(((
+        x: number,
+        y: number
+      ) => {
+        window.scrollX = typeof x === 'number' ? x : 0;
+        window.scrollY = y ?? 0;
+      }) as typeof window.scrollTo);
+      const history = createMemoryHistory({initialEntries: ['/']});
+      const router = createRouter(routes, history);
+      render(
+        <Router
+          router={router}
+          viewTransition={({action}) => action !== 'replace'}
+        >
+          <ScrollRestoration />
+          <View />
+        </Router>
+      );
+      await flush();
+      expect(screen.getByText('Home')).toBeDefined();
+      // 用户在 '/' 深处滚到 1011（离开时被保存为该条目偏移）。
+      window.scrollTo(0, 1011);
+      expect(window.scrollY).toBe(1011);
+
+      // push 动画：驱动 update 落帧（push 置顶的 scrollTo 同样发生在
+      // 提交之后）。
+      await act(async () => {
+        fireEvent.click(screen.getByText('GoPage'));
+      });
+      await flush();
+      expect(calls).toHaveLength(2);
+      act(() => {
+        calls[1].update();
+      });
+      expect(screen.getByText('Page')).toBeDefined();
+      scrollTo.mockClear();
+
+      // 返回：pop 动画打开，update 未驱动 = gate 持旧帧期间。
+      await act(async () => {
+        history.back();
+      });
+      await flush();
+      expect(calls).toHaveLength(3);
+      expect(calls[2].types).toEqual(['pop']);
+      // 恢复被挂起：scrollTo 尚未发生。
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      // 驱动过渡回调：落地视图提交完成后，恢复才落在真实布局上。
+      act(() => {
+        calls[2].update();
+      });
+      expect(screen.getByText('Home')).toBeDefined();
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      expect(scrollTo).toHaveBeenCalledWith(0, 1011);
+    });
+
+    // 缺陷 B 回归（非 VT 路径的保存侧）：同步提交使文档先收缩，浏览器
+    // 自动钳制 scrollY——保存读取必须发生在首个历史事件上（提交之前），
+    // 读到的才不是钳制后的坏值。
+    it('should read the leaving scroll before the view commits (save side)', async () => {
+      const scrollCalls: Array<{x: number; y: number; view: string}> = [];
+      const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(((
+        x: number,
+        y: number
+      ) => {
+        scrollCalls.push({x, y, view: currentView()});
+        window.scrollX = typeof x === 'number' ? x : 0;
+        window.scrollY = y ?? 0;
+      }) as typeof window.scrollTo);
+      // scrollY 读取探针：记录每次读取瞬间挂载的视图。
+      const reads: Array<{y: number; view: string}> = [];
+      let scrollY = 0;
+      Object.defineProperty(window, 'scrollY', {
+        configurable: true,
+        get: () => {
+          const view = currentView();
+          reads.push({y: scrollY, view});
+          return scrollY;
+        },
+        set: (v: number) => {
+          scrollY = v;
+        }
+      });
+      try {
+        const history = createMemoryHistory({initialEntries: ['/']});
+        const router = createRouter(routes, history);
+        render(
+          <Router router={router}>
+            <ScrollRestoration />
+            <View />
+          </Router>
+        );
+        await flush();
+        expect(screen.getByText('Home')).toBeDefined();
+        // 用户在 '/' 上滚到 1011。
+        window.scrollTo(0, 1011);
+
+        // push：离开 '/' 的保存读取发生在首个历史事件上（提交之前）。
+        await act(async () => {
+          fireEvent.click(screen.getByText('GoPage'));
+        });
+        await flush();
+        expect(screen.getByText('Page')).toBeDefined();
+
+        // 返回：恢复 1011 必须落在提交后的 Home 布局上。
+        await act(async () => {
+          history.back();
+        });
+        await flush();
+
+        // 保存读取发生在提交之前：push 离开 '/' 时读到 1011 的瞬间文档
+        // 还是 Home（旧实现把读取推迟到提交后，会看到 Page 且读到被
+        // 钳制的坏值）。
+        const saveReads = reads.filter((r) => r.y === 1011);
+        expect(saveReads.length).toBeGreaterThan(0);
+        expect(saveReads.every((r) => r.view === 'Home')).toBe(true);
+        // 恢复发生在提交之后：back 的 scrollTo(0,1011) 落在 Home 上，
+        // 而非提交前的 Page 旧文档。
+        expect(scrollCalls.at(-1)).toMatchObject({x: 0, y: 1011});
+        expect(currentView()).toBe('Home');
+        expect(scrollTo.mock.calls.at(-1)).toEqual([0, 1011]);
+      } finally {
+        delete (window as {scrollY?: number}).scrollY;
+        scrollTo.mockRestore();
+      }
+    });
   });
 
   it('should animate replace with empty types when the predicate opts in', async () => {

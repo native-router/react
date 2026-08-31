@@ -1,6 +1,7 @@
 import {createPath} from 'history';
 import type {HistoryState} from '@native-router/core';
 import {useEffect, useRef} from 'react';
+import {afterViewCommit} from '@@/view-commit';
 import {useRouter} from './Router';
 
 /** Saved scroll offset of one history stack slot. */
@@ -83,12 +84,16 @@ export default function ScrollRestoration({
       // REPLACE(stack serialization sync), and listener registration order
       // decides whether that REPLACE reaches us before or after the POP
       // itself. Collapse the whole synchronous event storm and decide once,
-      // from the final history state, in a microtask — no layout has
-      // scrolled yet at that point, so saving the left entry's offset
-      // still reads the pre-navigation scroll.
+      // from the final history state, in a microtask.
       sawPop ||= action === 'POP';
       if (scheduled) return;
       scheduled = true;
+      // 离开条目的偏移必须在首个历史事件上同步读取：本监听器先于 Router
+      // 的提交监听器注册（后代 effect 先行），此刻文档还是离开前的文档。
+      // 视图一旦提交——无论非 VT 路径的同步收缩，还是 VT gate 持旧帧——
+      // 浏览器都会按（新的或旧的）文档高度钳制 scrollY，之后再读到的
+      // 都是坏值（两条路径的保存侧都会被污染）。
+      const left = {x: window.scrollX, y: window.scrollY};
       queueMicrotask(() => {
         scheduled = false;
         if (!active) return;
@@ -101,21 +106,28 @@ export default function ScrollRestoration({
 
         if (index !== lastIndex) {
           // The entry we just left keeps its scroll offset.
-          positions.set(lastIndex, {x: window.scrollX, y: window.scrollY});
+          positions.set(lastIndex, left);
         }
 
+        // 恢复/置顶必须等视图提交之后：scrollTo 落在落地视图的真实布局
+        // 上才不会被文档高度钳制——VT 挂起时等一次性提交回调，同步提交
+        // 路径此刻 DOM 已 flushSync 完成，立即执行即是提交之后。
         if (popped) {
           const saved = positions.get(index) ?? {x: 0, y: 0};
-          window.scrollTo(saved.x, saved.y);
           positions.set(index, saved);
+          afterViewCommit(router, () => {
+            if (active) window.scrollTo(saved.x, saved.y);
+          });
         } else if (
           resetOnPush &&
           (index !== lastIndex || path !== lastPathRef.current)
         ) {
           // A fresh forward entry, or the current entry rewritten to a
           // different location(a replace navigation) — start at the top.
-          window.scrollTo(0, 0);
           positions.set(index, {x: 0, y: 0});
+          afterViewCommit(router, () => {
+            if (active) window.scrollTo(0, 0);
+          });
         }
         // Anything else is an internal re-commit of the same entry: keep
         // the current scroll.

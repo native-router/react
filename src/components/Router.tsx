@@ -28,8 +28,13 @@ import type {Options, ResolveView, RouterInstance} from '@native-router/core';
 import {splitProps, uniqId} from '@native-router/core/util';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
 import defaultResolve from '@@/resolve-view';
-import {openViewTransition, shouldAnimate} from '@@/view-transition';
+import {
+  openViewTransition,
+  shouldAnimate,
+  syncRender
+} from '@@/view-transition';
 import type {ViewTransitionInfo, ViewTransitionProp} from '@@/view-transition';
+import {emitViewCommit, markViewCommitPending} from '@@/view-commit';
 
 const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
   null
@@ -80,44 +85,62 @@ export function Router({
       // 截帧保护：动画打开期间新视图只挂起（pendingView），由过渡回调在
       // 回调内一次性提交。此前任何渲染源读到的仍是已提交的旧视图——
       // loading 状态变化、POP 之后的窗口同步 replace 通知都会抢先在
-      // 浏览器截帧之前提交新 DOM，令过渡被判为无变化而跳过（pop 动画
-      // 正是被窗口同步 replace 这样抵消的）。
+      // 浏览器截帧之前提交新 DOM，令过渡被判为无变化而跳过。
       let open = false;
       let pendingView: ReactNode;
-      return listen(router, (view, action) => {
+      const commit = (flush: boolean) => {
+        open = false;
+        markViewCommitPending(router, false);
+        viewRef.current = pendingView;
+        if (flush) {
+          // 提交即渲染：DOM 在当前调用栈完成更新，emitViewCommit 的订阅
+          // 者（滚动恢复等）拿到的才是落地视图的真实布局。
+          syncRender(onStoreChange);
+          emitViewCommit(router);
+        } else {
+          // 同视图重宣告（POP 后的窗口同步 replace 等）：无 DOM 变化，
+          // 保持原有的调度渲染，不触发提交回调。
+          onStoreChange();
+        }
+      };
+      const unlisten = listen(router, (view, action) => {
         const to = router.history.location;
         const info: ViewTransitionInfo = {action, to, from};
         from = to;
+        pendingView = view;
         if (open) {
           // 已有过渡打开：只记录最新视图，其回调执行时统一提交。
-          pendingView = view;
           return;
         }
-        const commit = () => {
-          open = false;
-          viewRef.current = pendingView;
-          onStoreChange();
-        };
-        // 方向感：push/pop → 同名 types，replace → 空 types。
-        const transition = shouldAnimate(viewTransitionRef.current, info)
-          ? openViewTransition(commit, action === 'replace' ? [] : [action])
-          : undefined;
+        const changed = !Object.is(viewRef.current, view);
+        const transition =
+          changed && shouldAnimate(viewTransitionRef.current, info)
+            ? openViewTransition(
+                () => commit(true),
+                action === 'replace' ? [] : [action]
+              )
+            : undefined;
         if (transition) {
           open = true;
-          pendingView = view;
+          markViewCommitPending(router, true);
           // 保险：规范保证 update 回调恰执行一次，但对极端环境（被新
           // 过渡取代时的跳过路径差异、隐藏页签）兜底——过渡结束时若
           // 仍未提交则补一次，避免视图卡在旧帧。
           const bail = () => {
-            if (open) commit();
+            if (open) commit(true);
           };
           transition.finished?.then(bail, bail);
         } else {
-          // 无动画或不支持 API：直接提交。
-          pendingView = view;
-          commit();
+          // 无动画或不支持 API：同步提交（有 DOM 变化时 flushSync）。
+          commit(changed);
         }
       });
+      return () => {
+        // 退订时清掉挂起标记，别让滚动恢复等 afterViewCommit 订阅者
+        // 等一个再也不会来的提交。
+        markViewCommitPending(router, false);
+        unlisten();
+      };
     },
     [router]
   );

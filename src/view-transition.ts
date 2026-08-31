@@ -30,9 +30,12 @@ export type ViewTransitionInfo = {
 export type ViewTransitionProp =
   boolean | ((info: ViewTransitionInfo) => boolean);
 
-// react-dom owns flushSync(17/18/19 uniformly); the callback must render
-// synchronously for the browser to capture both frames correctly.
-const syncRender: (render: () => void) => void = flushSync;
+// react-dom owns flushSync(17/18/19 uniformly); the transition callback
+// must render synchronously for the browser to capture both frames
+// correctly. Exported for the Router wiring, which owns the commit.
+export const syncRender: (render: () => void) => void = flushSync;
+
+const noop = () => {};
 
 // `types` 支持的一次性行为探测缓存：undefined 未探测，其余为结论。
 let supportsTypes: boolean | undefined;
@@ -80,7 +83,12 @@ function typesSupported(): boolean {
     const start = getStarter();
     if (start) {
       try {
-        start({update() {}, types: []}).skipTransition();
+        const probe = start({update() {}, types: []});
+        // skip 会让 ready/finished 以 AbortError reject——接住，否则每次
+        // 页面首次动画导航都泄漏一条 unhandled rejection。
+        probe.ready?.catch(noop);
+        probe.finished?.catch(noop);
+        probe.skipTransition();
         supportsTypes = true;
       } catch {
         // 旧实现：降级为不带 types 的 callback 调用形态（无方向感）。
@@ -91,13 +99,12 @@ function typesSupported(): boolean {
 }
 
 /**
- * Start a document view transition whose update callback runs `commit`
- * synchronously(`flushSync`) — the DOM must be updated inside the callback
- * for the browser to capture both frames correctly. The library owns the
+ * Start a document view transition around `update`. The library owns the
  * timing only; the animated scope stays entirely the caller's CSS
  * (`view-transition-name` / `::view-transition-*`), never touched here.
- * @param commit renders the pending view and notifies the store; called
- * exactly once, at the browser's rendering opportunity
+ * @param update the transition callback — MUST render the pending view
+ * synchronously(flushSync) so the browser captures both frames correctly;
+ * the caller owns the commit it performs
  * @param types direction tags: `['push']`/`['pop']` for CSS
  * `:active-view-transition-type(...)`, `[]` for the default root
  * transition — dropped when the browser predates `types`(probed once by
@@ -107,13 +114,14 @@ function typesSupported(): boolean {
  * unavailable(SSR/old browsers/jsdom) — degrade to a plain commit
  */
 export function openViewTransition(
-  commit: () => void,
+  update: () => void,
   types: string[]
 ): ViewTransition | undefined {
   const start = getStarter();
   if (!start) return undefined;
-  // 回调内同步完成 DOM 更新才能正确截帧。
-  const update = () => syncRender(commit);
-  if (typesSupported()) return start({update, types});
-  return start(update);
+  const transition = typesSupported() ? start({update, types}) : start(update);
+  // 被更新的过渡取代（同文档并发）时 ready 会 reject——接住，同样为了
+  // 不泄漏 unhandled rejection。
+  transition.ready?.catch(noop);
+  return transition;
 }
