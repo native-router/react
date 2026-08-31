@@ -1,5 +1,6 @@
 import {describe, it, expect, expectTypeOf, vi, beforeEach} from 'vitest';
 import {render, screen, act, fireEvent} from '@testing-library/react';
+import {createMemoryHistory} from 'history';
 import React from 'react';
 import {
   commit,
@@ -81,7 +82,12 @@ vi.mock('@native-router/core', async (importOriginal) => ({
 }));
 
 function createMockRouter(viewStack: unknown[] = [null]) {
-  return {viewStack} as unknown as RouterInstance<Route, React.ReactNode>;
+  // viewTransition 订阅会读取 router.history.location（from/to 追踪），
+  // mock 路由也带一个真实内存 history。
+  return {
+    viewStack,
+    history: createMemoryHistory()
+  } as unknown as RouterInstance<Route, React.ReactNode>;
 }
 
 describe('Router', () => {

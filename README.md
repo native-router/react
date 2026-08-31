@@ -79,6 +79,7 @@ function Preview({visible}: {visible: boolean}) {
 - Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop; `TypedNavLink`/`TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links. Give the link the whole table — `<TypedLink<typeof routes>>` — and `search` joins the discrimination too, typed by the pattern's route schema input(Standard Schema `~standard.types`, zod/valibot/arktype), serialized into the href and the navigation target; schema-less patterns keep `search` loose, and the paths-union flavor is untouched
 - Router context: a `context` prop on the Router components (or a `context` option on `createRouter`) bakes in one synchronous value per router instance, handed to every `data` loader and `beforeLoad` guard as `ctx.context` — per-instance deps (API client, config, i18n) without a module singleton; omit it and the context is `undefined`, existing setups unchanged
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
+- `viewTransition` prop on the Router components opts navigation into the browser's View Transitions API: `true` animates push navigations only, a predicate decides per navigation on `{action, to, from}`; the direction rides the transition `types` for `:active-view-transition-type(push|pop)` CSS, and unsupported browsers degrade to plain navigation
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
 - Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
 - Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
@@ -143,6 +144,110 @@ The navigation semantics stay owned by the link: `href` is always the computed t
 `TypedNavLink` and `TypedPrefetchLink` are the one exception: with a single type argument they still accept an `as` component (`<TypedNavLink<Paths> to="/" end as={HazeNavLink} />`), with the component's own props passing through unchecked; give both type arguments for the full checking above.
 
 `PrefetchLink`'s strategies keep working through the `as` component; the `viewport` strategy observes the DOM node the component forwards its ref to, so a component that never forwards the ref down to a DOM element simply never triggers a viewport prefetch.
+
+## View Transitions
+
+The `viewTransition` prop opts navigation into the browser's [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) — route views crossfade with zero animation code:
+
+```tsx
+import {HistoryRouter as Router, View} from '@native-router/react';
+
+<Router routes={routes} viewTransition>
+  <View />
+</Router>
+```
+
+The library owns only the **timing**: every navigation that passes the check is committed inside `document.startViewTransition(() => flushSync(render))`, so the DOM updates synchronously in the transition callback and the browser captures both frames correctly. While a transition is open, the pending view is committed only inside its callback — anything else that re-renders in between (the loading state, the internal replace that follows a POP) still sees the old view, so nothing leaks a pre-capture commit. The library never assigns a `view-transition-name` and never injects CSS: **what animates is entirely your stylesheet**.
+
+**`true` animates pushes only.** A `pop` lands on a cached `viewStack` snapshot — animating it would only slow the back button down — and `replace` (guard redirects, `refresh`) stays silent. A predicate decides per navigation instead, judged on `{action: 'push' | 'replace' | 'pop', to, from}`:
+
+```tsx
+// Pushes slide in from the right, back/forward mirror it:
+<Router
+  routes={routes}
+  viewTransition={({action}) => action === 'push' || action === 'pop'}
+>
+  <View />
+</Router>
+```
+
+Each animated navigation carries its direction as a [transition type](https://developer.chrome.com/docs/web-platform/view-transitions/same-document) — `push` or `pop`, none for `replace` — so CSS can tell the two apart:
+
+```css
+/* Default crossfade needs no CSS at all; this adds direction */
+::view-transition-old(root) {animation: 200ms ease both vt-out;}
+::view-transition-new(root) {animation: 200ms ease both vt-in;}
+/* pop plays the same pair mirrored */
+:root:active-view-transition-type(pop)::view-transition-old(root) {
+  animation-name: vt-out-rev;
+}
+:root:active-view-transition-type(pop)::view-transition-new(root) {
+  animation-name: vt-in-rev;
+}
+@keyframes vt-out    {to   {transform: translateX(-30%); opacity: 0;}}
+@keyframes vt-in     {from {transform: translateX(30%);  opacity: 0;}}
+@keyframes vt-out-rev {to   {transform: translateX(30%);  opacity: 0;}}
+@keyframes vt-in-rev  {from {transform: translateX(-30%); opacity: 0;}}
+```
+
+### Recipe 1 — whole-page transition (zero CSS)
+
+With no `view-transition-name` anywhere, the whole document is one `root` snapshot: `viewTransition` alone gives you the browser's default crossfade. Nothing to set up.
+
+### Recipe 2 — animating only the view outlet
+
+Nested layouts, `MemoryRouter` widgets, master-detail panes: circle the animated region and freeze everything else. Give the outlet the document's only `view-transition-name`, then hold the `root` group still:
+
+```tsx
+<main className="outlet">
+  <View />
+</main>
+```
+
+```css
+.outlet {
+  view-transition-name: outlet;
+}
+/* Freeze the page shell: only the outlet group animates */
+::view-transition-group(root) {
+  animation: none;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* The outlet itself crossfades (or slides — style it like root above) */
+::view-transition-group(outlet) {
+  animation-duration: 200ms;
+}
+```
+
+A `view-transition-name` must be **unique across the whole document** — one name, one element. Two elements sharing a name make the transition skip.
+
+### Concurrency: one transition per document
+
+The browser runs a single view transition per document at a time — starting a new one skips the previous. Two routers both animating (nested SPAs, several `MemoryRouter` panes) will constantly skip each other; give the inner routers predicates that keep them quiet, or animate only one of them. This is browser semantics, not something the library intervenes in.
+
+### Accessibility
+
+Respect `prefers-reduced-motion`:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+```
+
+### Support
+
+- Same-document View Transitions: Chrome/Edge 111+, Safari 18+, Firefox 139+
+- Transition `types` (the direction tags): Chrome/Edge 129+, Safari 18.2+ — probed once by behavior (a callback-only implementation throws a synchronous `TypeError` on the options form); elsewhere the transition still runs, just without direction types, so `:active-view-transition-type(...)` selectors stop matching
+- No View Transitions at all (jsdom, older browsers): plain navigation, nothing happens
 
 ## Why `useData` is typed manually
 

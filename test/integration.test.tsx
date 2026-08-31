@@ -32,7 +32,13 @@ import {
   setBlocker,
   toLocation
 } from '@native-router/core';
-import type {Location, StandardSchemaV1} from '@native-router/core';
+import type {
+  Location,
+  RouterInstance,
+  StandardSchemaV1
+} from '@native-router/core';
+import {resetViewTransitionCapability} from '../src/view-transition';
+import type {ViewTransitionInfo} from '../src/view-transition';
 import {
   Link,
   MemoryRouter,
@@ -54,7 +60,8 @@ import {
   usePrefetch,
   useSearch,
   useSearchParams,
-  useSetSearch
+  useSetSearch,
+  useRouter
 } from '../src/index';
 import type {Route, RoutePaths} from '../src/types';
 
@@ -2958,5 +2965,295 @@ describe('TypedLink search', () => {
     await flush();
     expect(history.location.search).toBe('?page=6');
     expect(screen.getByText('page:6')).toBeDefined();
+  });
+});
+
+describe('View Transitions', () => {
+  // jsdom 没有 document.startViewTransition：默认即降级路径。需要动画
+  // 断言的用例装上 mock（记录 update/types，不自动执行 update——由测试
+  // 显式驱动，才能断言「视图先停在旧帧」与「回调内同步完成渲染」）。
+  type RecordedTransition = {update: () => void; types?: string[]};
+
+  const routes: Route[] = [
+    {path: '/', component: () => Home},
+    {path: '/page', component: () => Page, data: () => 'page-data'}
+  ];
+
+  function installStartViewTransition() {
+    const calls: RecordedTransition[] = [];
+    document.startViewTransition = ((arg: unknown) => {
+      calls.push(
+        typeof arg === 'function'
+          ? {update: arg as () => void}
+          : {
+              update: (arg as RecordedTransition).update,
+              types: (arg as RecordedTransition).types
+            }
+      );
+      return {skipTransition() {}};
+    }) as typeof document.startViewTransition;
+    return calls;
+  }
+
+  // 卸载 mock 恢复「无 API」基线；同时重置模块级能力探测缓存，让每个
+  // 用例的首次动画导航都按本用例的 mock 重新探测（探测调用会混入
+  // calls[0]：update 空操作、types []）。
+  afterEach(() => {
+    delete (document as {startViewTransition?: unknown}).startViewTransition;
+    resetViewTransitionCapability();
+  });
+
+  it('should animate push navigations with a synchronous in-callback render', async () => {
+    const calls = installStartViewTransition();
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router} viewTransition>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+    // 冷启动是 listen 的预热 replace + 惰性重解析落位：默认谓词不做动画。
+    expect(calls).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoPage'));
+    });
+    await flush();
+    // 首次动画导航先做一次性 types 能力探测（calls[0]），真正的 push
+    // 过渡是 calls[1]，types 带方向 'push'。
+    expect(calls).toHaveLength(2);
+    expect(calls[0].types).toEqual([]);
+    expect(calls[1].types).toEqual(['push']);
+    // update 还没被「浏览器」执行：视图仍停在旧帧。
+    expect(screen.getByText('Home')).toBeDefined();
+
+    // 回调内同步完成渲染（flushSync 生效）：update 返回即已提交新视图，
+    // 而非调度态。
+    act(() => {
+      calls[1].update();
+    });
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(screen.queryByText('Home')).toBeNull();
+  });
+
+  it('should not animate pop under the default predicate (MemoryRouter prop threading)', async () => {
+    const calls = installStartViewTransition();
+    let captured: RouterInstance<Route> | undefined;
+    function Capture() {
+      captured = useRouter();
+      return null;
+    }
+    render(
+      <MemoryRouter routes={routes} viewTransition>
+        <Capture />
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoPage'));
+    });
+    await flush();
+    // viewTransition prop 穿透了 MemoryRouter：push 走了动画（探测 + 过渡）。
+    expect(calls).toHaveLength(2);
+    expect(calls[1].types).toEqual(['push']);
+    act(() => {
+      calls[1].update();
+    });
+    expect(screen.getByText('Page')).toBeDefined();
+
+    // POP 命中 viewStack 快照：直接通知，不经过 startViewTransition，
+    // 视图照常恢复；前进同理。
+    await act(async () => {
+      captured!.history.back();
+    });
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(screen.getByText('Home')).toBeDefined();
+
+    await act(async () => {
+      captured!.history.forward();
+    });
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(screen.getByText('Page')).toBeDefined();
+  });
+
+  it('should not animate refresh (replace) under the default predicate', async () => {
+    const calls = installStartViewTransition();
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router} viewTransition>
+        <View />
+      </Router>
+    );
+    await flush();
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoPage'));
+    });
+    await flush();
+    expect(calls).toHaveLength(2);
+    act(() => {
+      calls[1].update();
+    });
+    expect(screen.getByText('Page')).toBeDefined();
+
+    // refresh 是 replace：默认谓词保持静默，重解析视图照常落位。
+    await act(async () => {
+      await refresh(router);
+    });
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(screen.getByText('Page')).toBeDefined();
+  });
+
+  it('should animate pop when the predicate opts in, with accurate info', async () => {
+    const calls = installStartViewTransition();
+    const infos: ViewTransitionInfo[] = [];
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes, history);
+    render(
+      <Router
+        router={router}
+        viewTransition={(info) => {
+          infos.push(info);
+          return info.action === 'pop';
+        }}
+      >
+        <View />
+      </Router>
+    );
+    await flush();
+    // 冷启动的两次 replace 通知（预热 + 惰性重解析落位）：谓词均收到
+    // info 并拒绝。
+    expect(infos.map(({action}) => action)).toEqual(['replace', 'replace']);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoPage'));
+    });
+    await flush();
+    // push 被拒绝：直接通知，视图已更新，无动画。
+    expect(infos.map(({action}) => action)).toEqual([
+      'replace',
+      'replace',
+      'push'
+    ]);
+    expect(calls).toHaveLength(0);
+    expect(screen.getByText('Page')).toBeDefined();
+
+    await act(async () => {
+      history.back();
+    });
+    await flush();
+    // pop 通过：探测 + pop 过渡，types 带方向 'pop'。随后的窗口同步
+    // replace 通知被截帧保护吞掉（谓词不再被问，视图由过渡回调统一
+    // 提交）。
+    expect(calls).toHaveLength(2);
+    expect(calls[1].types).toEqual(['pop']);
+    expect(infos.map(({action}) => action)).toEqual([
+      'replace',
+      'replace',
+      'push',
+      'pop'
+    ]);
+    // update 未驱动，视图停在旧帧。
+    expect(screen.getByText('Page')).toBeDefined();
+    act(() => {
+      calls[1].update();
+    });
+    expect(screen.getByText('Home')).toBeDefined();
+
+    // info 三字段准确：push 与 pop 的方向、to/from 各自对应导航两端。
+    const push = infos[2]!;
+    expect(push.action).toBe('push');
+    expect(push.to.pathname).toBe('/page');
+    expect(push.from.pathname).toBe('/');
+    const pop = infos[3]!;
+    expect(pop.action).toBe('pop');
+    expect(pop.to.pathname).toBe('/');
+    expect(pop.from.pathname).toBe('/page');
+  });
+
+  it('should navigate and render normally without the View Transitions API', async () => {
+    // jsdom 默认没有 startViewTransition（afterEach 已确保无残留 mock）。
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router} viewTransition>
+        <View />
+      </Router>
+    );
+    await flush();
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoPage'));
+    });
+    await flush();
+    // 零成本降级：push 照常导航、渲染，无异常。
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(screen.getByText('page-data')).toBeDefined();
+
+    await act(async () => {
+      history.back();
+    });
+    await flush();
+    // POP 快照恢复同样照常。
+    expect(screen.getByText('Home')).toBeDefined();
+  });
+
+  it('should fall back to the callback signature when types are unsupported', async () => {
+    // 模拟旧签名实现（Chrome 111-128 / Safari 18-18.1 / 无 types 的
+    // Firefox）：只接受函数参数，options 对象在 WebIDL 参数转换阶段
+    // 同步抛出 TypeError。
+    const updates: Array<() => void> = [];
+    document.startViewTransition = ((arg: unknown) => {
+      if (typeof arg !== 'function') throw new TypeError('not a function');
+      updates.push(arg as () => void);
+      return {skipTransition() {}};
+    }) as typeof document.startViewTransition;
+
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router} viewTransition>
+        <View />
+      </Router>
+    );
+    await flush();
+    await act(async () => {
+      fireEvent.click(screen.getByText('GoPage'));
+    });
+    await flush();
+    // 探测调用抛错被吞掉；正式调用降级为 callback 形态（无方向感）。
+    expect(updates).toHaveLength(1);
+    expect(screen.getByText('Home')).toBeDefined();
+
+    act(() => {
+      updates[0]();
+    });
+    expect(screen.getByText('Page')).toBeDefined();
+  });
+
+  it('should animate replace with empty types when the predicate opts in', async () => {
+    const calls = installStartViewTransition();
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router} viewTransition={() => true}>
+        <View />
+      </Router>
+    );
+    await flush();
+    // 冷启动的预热 replace 被放行动画（探测 + 过渡）；其后的惰性重解析
+    // replace 通知被截帧保护吞掉，由过渡回调统一提交。replace 的 types
+    // 为空数组（默认 root 过渡，不带方向）。
+    expect(calls).toHaveLength(2);
+    expect(calls[1].types).toEqual([]);
+    act(() => {
+      calls[1].update();
+    });
+    expect(screen.getByText('Home')).toBeDefined();
   });
 });

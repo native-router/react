@@ -79,6 +79,7 @@ function Preview({visible}: {visible: boolean}) {
 - 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底；`TypedNavLink`/`TypedPrefetchLink` 把同样的收窄带给激活态链接与预取链接
 - Router 上下文：Router 组件的 `context` prop（或 `createRouter` 的 `context` 选项）给每个 router 实例固化一份同步值，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到——按实例注入依赖（API client、配置、i18n）而无需模块单例；不传则为 `undefined`，现有接入零改动
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
+- `viewTransition` prop 让导航接入浏览器 View Transitions API：`true` 仅对 push 导航做动画，谓词按 `{action, to, from}` 逐次判定；方向感通过过渡 `types` 交给 `:active-view-transition-type(push|pop)` CSS 消费，不支持的浏览器降级为普通导航
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
 - Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决——谓词是放行语义，返回 `true` 放行导航、`false` 否决导航，不是「返回 true 阻止」；组件挂载期间注册、始终以最新闭包被询问；每次否决都记录在返回值的 `blocker.state` 上，并带 `proceed()`/`reset()` 通道——`proceed()` 重试被否决的导航，仅绕过本 hook 自己的 blocker，确认框场景三行搞定）
 - 两层错误处理、两个阶段：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）——`errorComponent` 既渲染 resolve 期失败（loader/守卫/search，无 `ctx.phase`），也渲染组件子树的渲染期抛错（`ctx.phase === 'render'`，由路由级错误边界捕获，渲染崩溃不会越过路由炸到 React 根，正如浏览器对任何加载失败都有错误页）
@@ -143,6 +144,110 @@ import {NavLink as HazeNavLink} from 'haze-ui';
 `TypedNavLink` 与 `TypedPrefetchLink` 是唯一的例外：单类型实参下也能接 `as` 组件（`<TypedNavLink<Paths> to="/" end as={HazeNavLink} />`），此时组件自有 props 不做检查；两个类型实参都给才有上面的完整检查。
 
 `PrefetchLink` 的预取策略在 `as` 组件下全部可用；`viewport` 策略观察的是组件转发 ref 的那个 DOM 节点，若组件从不把 ref 透传到 DOM 元素，viewport 预取自然不会触发。
+
+## View Transitions（视图过渡）
+
+`viewTransition` prop 让导航接入浏览器的 [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API)——零动画代码即可让路由视图交叉淡入淡出：
+
+```tsx
+import {HistoryRouter as Router, View} from '@native-router/react';
+
+<Router routes={routes} viewTransition>
+  <View />
+</Router>
+```
+
+库只负责**时序**：每个通过判定的导航都提交在 `document.startViewTransition(() => flushSync(render))` 内，DOM 在过渡回调中同步更新，浏览器才能正确截取前后两帧。过渡打开期间，挂起的新视图只在回调内提交——期间其它渲染源（loading 状态、POP 之后紧跟的内部 replace）读到的仍是旧视图，不会有任何抢先于截帧的提交。库**不给任何元素挂 `view-transition-name`、不注入 CSS**：动画范围完全由你的样式表决定。
+
+**`true` 只对 push 做动画。** `pop` 命中的是 `viewStack` 快照——动画只会拖慢返回；`replace`（守卫重定向、`refresh`）保持静默。谓词则按 `{action: 'push' | 'replace' | 'pop', to, from}` 逐次判定：
+
+```tsx
+// push 从右侧滑入，back/forward 镜像滑出：
+<Router
+  routes={routes}
+  viewTransition={({action}) => action === 'push' || action === 'pop'}
+>
+  <View />
+</Router>
+```
+
+每个做动画的导航都会带上方向作为[过渡 type](https://developer.chrome.com/docs/web-platform/view-transitions/same-document)——`push` 或 `pop`，replace 不带——CSS 侧据此区分方向：
+
+```css
+/* 默认交叉淡入淡出无需任何 CSS；这里加方向感 */
+::view-transition-old(root) {animation: 200ms ease both vt-out;}
+::view-transition-new(root) {animation: 200ms ease both vt-in;}
+/* pop 反向播放同一组动画 */
+:root:active-view-transition-type(pop)::view-transition-old(root) {
+  animation-name: vt-out-rev;
+}
+:root:active-view-transition-type(pop)::view-transition-new(root) {
+  animation-name: vt-in-rev;
+}
+@keyframes vt-out    {to   {transform: translateX(-30%); opacity: 0;}}
+@keyframes vt-in     {from {transform: translateX(30%);  opacity: 0;}}
+@keyframes vt-out-rev {to   {transform: translateX(30%);  opacity: 0;}}
+@keyframes vt-in-rev  {from {transform: translateX(-30%); opacity: 0;}}
+```
+
+### 配方一 —— 整页过渡（零 CSS）
+
+只要页面里没有任何 `view-transition-name`，整个文档就是单一的 `root` 快照：仅 `viewTransition` 一项即得到浏览器默认的交叉淡入淡出，无需任何配置。
+
+### 配方二 —— 只动画视图出口
+
+嵌套布局、`MemoryRouter` 小部件、master-detail 分栏：圈出要动画的区域，冻结其余部分。给视图出口挂上全文档唯一的 `view-transition-name`，再让 `root` 组保持静止：
+
+```tsx
+<main className="outlet">
+  <View />
+</main>
+```
+
+```css
+.outlet {
+  view-transition-name: outlet;
+}
+/* 冻结页面外壳：只有 outlet 组在动画 */
+::view-transition-group(root) {
+  animation: none;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* outlet 自身交叉淡入淡出（或按上面 root 的写法做滑动） */
+::view-transition-group(outlet) {
+  animation-duration: 200ms;
+}
+```
+
+`view-transition-name` 必须**全文档唯一**——一个名字只挂一个元素，两个元素同名会让过渡被跳过。
+
+### 并发：每文档同时只有一个过渡
+
+浏览器语义：同一文档同时只跑一个 view transition，新开一个会 skip 前一个。两个 router 同时开动画（嵌套 SPA、多个 `MemoryRouter` 面板）会互相 skip；给内层 router 用谓词收敛，或只让其中一个做动画。库不做运行时干预。
+
+### 无障碍
+
+尊重 `prefers-reduced-motion`：
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+```
+
+### 支持面
+
+- 同文档 View Transitions：Chrome/Edge 111+、Safari 18+、Firefox 139+
+- 过渡 `types`（方向标签）：Chrome/Edge 129+、Safari 18.2+——通过一次性行为探测识别（只接受 callback 的旧实现对 options 形态同步抛 `TypeError`）；其余环境过渡照常运行，只是没有方向 type，`:active-view-transition-type(...)` 选择器不再命中
+- 完全没有 View Transitions（jsdom、旧浏览器）：普通导航，什么也不发生
 
 ## 为什么 `useData` 手动标注类型
 

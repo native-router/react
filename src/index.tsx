@@ -1,4 +1,5 @@
 export * from './components/Router';
+export type {ViewTransitionInfo, ViewTransitionProp} from './view-transition';
 export {default as Link} from './components/Link';
 export {default as NavLink} from './components/NavLink';
 export {default as PrefetchLink, usePrefetch} from './components/PrefetchLink';

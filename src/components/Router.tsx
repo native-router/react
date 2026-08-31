@@ -28,6 +28,8 @@ import type {Options, ResolveView, RouterInstance} from '@native-router/core';
 import {splitProps, uniqId} from '@native-router/core/util';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
 import defaultResolve from '@@/resolve-view';
+import {openViewTransition, shouldAnimate} from '@@/view-transition';
+import type {ViewTransitionInfo, ViewTransitionProp} from '@@/view-transition';
 
 const RouterContext = createContext<RouterInstance<Route, ReactNode> | null>(
   null
@@ -37,6 +39,18 @@ type Props<C = undefined> = {
   children?: ReactNode;
   routes: Route[] | Route;
   resolveView?: typeof defaultResolve;
+  /**
+   * Opt in to document [View Transitions](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API):
+   * `true` animates push navigations only — pop restores a `viewStack`
+   * snapshot and animating it would only slow the back button down,
+   * replace (guard redirects, `refresh`) stays silent; a predicate
+   * receives `{action, to, from}` and decides per navigation. The
+   * library owns the timing(`startViewTransition` + `flushSync`) and the
+   * action→types mapping(`:active-view-transition-type(push|pop)`), the
+   * animated scope is the caller's CSS. Unsupported browsers get the
+   * plain navigation.
+   */
+  viewTransition?: ViewTransitionProp;
 } & Omit<Options<ReactNode, C>, 'onLoadingChange'>;
 
 /**
@@ -45,18 +59,66 @@ type Props<C = undefined> = {
  */
 export function Router({
   router,
-  children
+  children,
+  viewTransition
 }: {
   children?: ReactNode;
   router: RouterInstance<Route, ReactNode>;
+  viewTransition?: ViewTransitionProp;
 }) {
   const viewRef = useRef<ReactNode>(getCurrentView(router));
+  // Latest-prop ref: the store subscription stays stable per router, so
+  // toggling viewTransition never resubscribes — a resubscribe cycle
+  // would cancel in-flight resolutions through listen()'s teardown.
+  const viewTransitionRef = useRef(viewTransition);
+  viewTransitionRef.current = viewTransition;
   const subscribe = useCallback(
-    (onStoreChange: () => void) =>
-      listen(router, (view) => {
-        viewRef.current = view;
-        onStoreChange();
-      }),
+    (onStoreChange: () => void) => {
+      // `from` of the next notification: history swaps `location` before
+      // the listener runs, so at notification time it already is `to`.
+      let from = router.history.location;
+      // 截帧保护：动画打开期间新视图只挂起（pendingView），由过渡回调在
+      // 回调内一次性提交。此前任何渲染源读到的仍是已提交的旧视图——
+      // loading 状态变化、POP 之后的窗口同步 replace 通知都会抢先在
+      // 浏览器截帧之前提交新 DOM，令过渡被判为无变化而跳过（pop 动画
+      // 正是被窗口同步 replace 这样抵消的）。
+      let open = false;
+      let pendingView: ReactNode;
+      return listen(router, (view, action) => {
+        const to = router.history.location;
+        const info: ViewTransitionInfo = {action, to, from};
+        from = to;
+        if (open) {
+          // 已有过渡打开：只记录最新视图，其回调执行时统一提交。
+          pendingView = view;
+          return;
+        }
+        const commit = () => {
+          open = false;
+          viewRef.current = pendingView;
+          onStoreChange();
+        };
+        // 方向感：push/pop → 同名 types，replace → 空 types。
+        const transition = shouldAnimate(viewTransitionRef.current, info)
+          ? openViewTransition(commit, action === 'replace' ? [] : [action])
+          : undefined;
+        if (transition) {
+          open = true;
+          pendingView = view;
+          // 保险：规范保证 update 回调恰执行一次，但对极端环境（被新
+          // 过渡取代时的跳过路径差异、隐藏页签）兜底——过渡结束时若
+          // 仍未提交则补一次，避免视图卡在旧帧。
+          const bail = () => {
+            if (open) commit();
+          };
+          transition.finished?.then(bail, bail);
+        } else {
+          // 无动画或不支持 API：直接提交。
+          pendingView = view;
+          commit();
+        }
+      });
+    },
     [router]
   );
   const getSnapshot = useCallback(() => viewRef.current, []);
@@ -126,7 +188,7 @@ export function createRouter<C = undefined>(
 }
 
 function useNewRouter<C = undefined>(
-  {routes, children, ...options}: Props<C>,
+  {routes, children, viewTransition, ...options}: Props<C>,
   createHistory: () => History
 ) {
   const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
@@ -162,8 +224,12 @@ function useNewRouter<C = undefined>(
   }, [router, rest]);
 
   const r = useMemo(
-    () => <Router router={router}>{children}</Router>,
-    [router, children]
+    () => (
+      <Router router={router} viewTransition={viewTransition}>
+        {children}
+      </Router>
+    ),
+    [router, children, viewTransition]
   );
 
   return <LoadingContext.Provider value={loading}>{r}</LoadingContext.Provider>;
