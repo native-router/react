@@ -1027,6 +1027,48 @@ describe('ScrollRestoration', () => {
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
   });
 
+  it('should scroll a searchDeps fast-path push back to the top like any push', async () => {
+    const scrollTo = mockScrollTo();
+    const routes: Route[] = [
+      {
+        searchDeps: [],
+        component: () =>
+          Promise.resolve(() => (
+            <nav>
+              Layout
+              <View />
+            </nav>
+          )),
+        children: [
+          {path: '/', searchDeps: [], component: () => Home},
+          {path: '/a', searchDeps: [], component: () => A}
+        ]
+      }
+    ];
+    const history = createMemoryHistory({initialEntries: ['/?x=1']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <ScrollRestoration />
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+    scrollTo(0, 500);
+    expect(window.scrollY).toBe(500);
+
+    scrollTo.mockClear();
+    await act(async () => {
+      // Irrelevant key change: the view is re-served, but the entry is
+      // still a fresh push and starts at the top.
+      navigate(router, '/?x=2');
+    });
+    await flush();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
   it('should keep the current offset on push when resetOnPush is false', async () => {
     const scrollTo = mockScrollTo();
     const {history} = renderScrollApp(false);
@@ -1391,6 +1433,295 @@ describe('search schema', () => {
     expect(screen.getByText('UserLayout')).toBeDefined();
     // The unnamed child level reads the named ancestor data both ways.
     expect(screen.getByTestId('posts').textContent).toBe('7:7');
+  });
+});
+
+describe('searchDeps', () => {
+  /**
+   * The painless Home pattern, compressed: a read schema coercing
+   * tag/offset/limit out of the URL, a write schema normalizing the
+   * value back into a clean query, a loader consuming the PARSED search,
+   * and searchDeps declaring exactly the consumed keys. The unknown-key
+   * case (?foo=…) stands in for "any search the route never declared".
+   */
+  const parseHomeSearch = (input: unknown) => {
+    const raw = (input ?? {}) as Record<string, unknown>;
+    const value: {tag?: string; offset: number; limit: number} = {
+      offset: Number(raw.offset) > 0 ? Math.floor(Number(raw.offset)) : 0,
+      limit: Number(raw.limit) > 0 ? Math.floor(Number(raw.limit)) : 10
+    };
+    if (typeof raw.tag === 'string' && raw.tag !== '') value.tag = raw.tag;
+    return value;
+  };
+  const homeSearchSchema: StandardSchemaV1<
+    unknown,
+    ReturnType<typeof parseHomeSearch>
+  > = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (input) => ({value: parseHomeSearch(input)})
+    }
+  };
+
+  function renderHomeApp(initial = '/?tag=a') {
+    const loaderCalls: string[] = [];
+    function Home() {
+      const data = useData<string>();
+      const search = useSearch(homeSearchSchema);
+      return (
+        <main>
+          <h1>Home</h1>
+          <span data-testid="home-data">{data}</span>
+          <span data-testid="home-search">
+            {`tag=${String(search.tag)};offset=${search.offset};limit=${search.limit}`}
+          </span>
+        </main>
+      );
+    }
+    const routes = createRoutes({
+      // The layout level must declare too — one undeclared level keeps
+      // the whole chain on the always-re-resolve path.
+      searchDeps: [],
+      component: () =>
+        Promise.resolve(() => (
+          <nav>
+            Layout
+            <View />
+          </nav>
+        )),
+      children: [
+        {
+          path: '/',
+          search: homeSearchSchema,
+          searchDeps: ['tag', 'offset', 'limit'],
+          data: ({search}) => {
+            loaderCalls.push(
+              `tag=${String((search as any).tag)};offset=${(search as any).offset}`
+            );
+            return `data:${loaderCalls.length}`;
+          },
+          component: () => Promise.resolve(Home)
+        },
+        {
+          path: '/other',
+          component: () => Promise.resolve(() => <h1>Other</h1>)
+        }
+      ]
+    });
+    const history = createMemoryHistory({initialEntries: [initial]});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    return {router, history, loaderCalls};
+  }
+
+  it('should run the schema once and re-serve the view for unknown keys', async () => {
+    const {router, history, loaderCalls} = renderHomeApp();
+    await flush();
+    // The initial resolve parsed the schema for the loader(coerced).
+    expect(loaderCalls).toEqual(['tag=a;offset=0']);
+    expect(screen.getByTestId('home-data').textContent).toBe('data:1');
+
+    // An unknown key lands in the URL: zero loader re-runs…
+    await act(async () => {
+      navigate(router, '/?tag=a&foo=bar');
+    });
+    await flush();
+    expect(loaderCalls).toEqual(['tag=a;offset=0']);
+    // …the live useSearch read tracks the new URL(coercion included)…
+    expect(screen.getByTestId('home-search').textContent).toBe(
+      'tag=a;offset=0;limit=10'
+    );
+    // …while useData keeps the resolve-time snapshot by design.
+    expect(screen.getByTestId('home-data').textContent).toBe('data:1');
+    expect(history.location.search).toBe('?tag=a&foo=bar');
+    expect(history.index).toBe(1);
+  });
+
+  it('should re-run the loader with the coerced search when a declared key changes', async () => {
+    const {router, loaderCalls} = renderHomeApp();
+    await flush();
+    await act(async () => {
+      navigate(router, '/?tag=a&offset=20');
+    });
+    await flush();
+    expect(loaderCalls).toEqual(['tag=a;offset=0', 'tag=a;offset=20']);
+    expect(screen.getByTestId('home-data').textContent).toBe('data:2');
+  });
+
+  it('should replay snapshots on back/forward around a reused entry', async () => {
+    const {router, history, loaderCalls} = renderHomeApp();
+    await flush();
+    await act(async () => {
+      navigate(router, '/?tag=a&foo=bar');
+    });
+    await flush();
+    await act(async () => {
+      navigate(router, '/?tag=b');
+    });
+    await flush();
+    expect(loaderCalls).toEqual(['tag=a;offset=0', 'tag=b;offset=0']);
+
+    await act(async () => {
+      history.back();
+    });
+    await flush();
+    // The reused slot replays its snapshot: the foo entry's data is the
+    // tag=a resolve, and no loader ran.
+    expect(loaderCalls).toEqual(['tag=a;offset=0', 'tag=b;offset=0']);
+    expect(screen.getByTestId('home-data').textContent).toBe('data:1');
+    expect(screen.getByTestId('home-search').textContent).toBe(
+      'tag=a;offset=0;limit=10'
+    );
+
+    await act(async () => {
+      history.back();
+    });
+    await flush();
+    expect(screen.getByTestId('home-data').textContent).toBe('data:1');
+    expect(loaderCalls).toEqual(['tag=a;offset=0', 'tag=b;offset=0']);
+  });
+
+  it('should keep the every-level rule: an undeclared sibling chain never reuses', async () => {
+    const loaderCalls: string[] = [];
+    function Other() {
+      return <h1>Other</h1>;
+    }
+    const routes: Route[] = [
+      // Root level deliberately undeclared.
+      {
+        component: () =>
+          Promise.resolve(() => (
+            <nav>
+              Layout
+              <View />
+            </nav>
+          )),
+        children: [
+          {
+            path: '/other',
+            searchDeps: [],
+            data: () => {
+              loaderCalls.push('run');
+            },
+            component: () => Promise.resolve(Other)
+          }
+        ]
+      }
+    ];
+    const history = createMemoryHistory({initialEntries: ['/other?x=1']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(loaderCalls).toEqual(['run']);
+    await act(async () => {
+      navigate(router, '/other?x=2');
+    });
+    await flush();
+    // The undeclared root keeps the chain on the re-resolve path.
+    expect(loaderCalls).toEqual(['run', 'run']);
+  });
+
+  it('should reuse on the setSearchParams {replace: true} branch', async () => {
+    const loaderCalls: string[] = [];
+    function List() {
+      const [, setSearchParams] = useSearchParams();
+      const set = (qs: string) => () =>
+        // eslint-disable-next-line compat/compat -- jsdom test environment
+        setSearchParams(new URLSearchParams(qs), {replace: true});
+      return (
+        <section>
+          <h1>List</h1>
+          <span data-testid="list-data">{loaderCalls.length}</span>
+          <button
+            type="button"
+            data-testid="set-panel"
+            onClick={set('page=1&panel=open')}
+          >
+            panel
+          </button>
+          <button type="button" data-testid="set-page" onClick={set('page=2')}>
+            page
+          </button>
+        </section>
+      );
+    }
+    const routes: Route[] = [
+      {
+        searchDeps: [],
+        component: () =>
+          Promise.resolve(() => (
+            <nav>
+              Layout
+              <View />
+            </nav>
+          )),
+        children: [
+          {
+            path: '/list',
+            searchDeps: ['page'],
+            data: () => {
+              loaderCalls.push('run');
+            },
+            component: () => Promise.resolve(List)
+          }
+        ]
+      }
+    ];
+    const history = createMemoryHistory({initialEntries: ['/list?page=1']});
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(loaderCalls).toEqual(['run']);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('set-panel'));
+    });
+    await flush();
+    // Irrelevant key via the replace branch: snapshot re-served, the
+    // entry rewritten in place(index unchanged).
+    expect(loaderCalls).toEqual(['run']);
+    expect(history.index).toBe(0);
+    expect(history.location.search).toBe('?page=1&panel=open');
+
+    // A declared key change through the same branch re-resolves.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('set-page'));
+    });
+    await flush();
+    expect(loaderCalls).toEqual(['run', 'run']);
+    expect(history.location.search).toBe('?page=2');
+    expect(history.index).toBe(0);
+  });
+
+  it('should let blockers veto a searchDeps navigation before the fast path', async () => {
+    const {router, history} = renderHomeApp();
+    await flush();
+    const unblock = setBlocker(router, () => false);
+    await act(async () => {
+      navigate(router, '/?tag=a&foo=bar');
+    });
+    await flush();
+    expect(history.location.search).toBe('?tag=a');
+    expect(history.index).toBe(0);
+    unblock();
+    await act(async () => {
+      navigate(router, '/?tag=a&foo=bar');
+    });
+    await flush();
+    expect(history.location.search).toBe('?tag=a&foo=bar');
   });
 });
 
@@ -3052,6 +3383,43 @@ describe('View Transitions', () => {
     });
     expect(screen.getByText('Page')).toBeDefined();
     expect(screen.queryByText('Home')).toBeNull();
+  });
+
+  it('should not open a transition for a searchDeps fast-path navigation', async () => {
+    const calls = installStartViewTransition();
+    const searchRoutes: Route[] = [
+      {
+        searchDeps: [],
+        component: () =>
+          Promise.resolve(() => (
+            <nav>
+              Layout
+              <View />
+            </nav>
+          )),
+        children: [{path: '/', searchDeps: [], component: () => Home}]
+      }
+    ];
+    const history = createMemoryHistory({initialEntries: ['/?x=1']});
+    const router = createRouter(searchRoutes, history);
+    render(
+      <Router router={router} viewTransition>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+
+    await act(async () => {
+      navigate(router, '/?x=2');
+    });
+    await flush();
+    // The re-served view is the very same reference: no transition opens
+    // (there is no DOM swap to animate) — only search-subscribed readers
+    // re-render in place.
+    expect(calls).toHaveLength(0);
+    expect(history.location.search).toBe('?x=2');
+    expect(screen.getByText('Home')).toBeDefined();
   });
 
   it('should not animate pop under the default predicate (MemoryRouter prop threading)', async () => {

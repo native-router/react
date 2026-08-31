@@ -76,6 +76,7 @@ function Preview({visible}: {visible: boolean}) {
 - `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — `data` loaders and `beforeLoad` guards receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
 - Search type closure: `createRoutes(routes)` re-types the returned table so every level's `data`/`beforeLoad` `ctx.search` derives from the level's own schema — no `Route<P, S>` generics or callback annotations needed; an explicit `Route<P, S>` generic still wins wherever written
+- Fine-grained search invalidation via `searchDeps` on every route level (the field passes through `createRoutes` to the core): declare the search keys a level's resolution consumes and a same-path navigation that leaves every declared projection unchanged re-serves the current view snapshot — zero guards, zero loaders, zero lazy imports; `useSearchParams`/`useSetSearch` writes (push and `{replace: true}`) take the same fast path, and `useSetSearch(schema)` still validates the whole value before navigating
 - Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop; `TypedNavLink`/`TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links. Give the link the whole table — `<TypedLink<typeof routes>>` — and `search` joins the discrimination too, typed by the pattern's route schema input(Standard Schema `~standard.types`, zod/valibot/arktype), serialized into the href and the navigation target; schema-less patterns keep `search` loose, and the paths-union flavor is untouched
 - Router context: a `context` prop on the Router components (or a `context` option on `createRouter`) bakes in one synchronous value per router instance, handed to every `data` loader and `beforeLoad` guard as `ctx.context` — per-instance deps (API client, config, i18n) without a module singleton; omit it and the context is `undefined`, existing setups unchanged
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
@@ -306,6 +307,42 @@ Why one factory for the three:
 - **`queryFn`** — the same fetch × cache bound for reads outside the route lifecycle; mutations write and invalidate through the same key the loader resolves, so the route channel and the component channel cannot drift apart.
 
 The factory itself is application glue — cache library, mock layer, DEV checks — not router API. It is extracted from **painless**, the reference SPA template built on this router (see its `src/util/dataLoader.ts` for the full implementation: double-channel caching, DevTool mocks and the DEV identity check included).
+
+## Fine-grained search invalidation
+
+A same-path search change — paging, filtering, collapsing a panel — normally re-resolves the whole chain: every level's `beforeLoad`, `data` loader and lazy `component` import re-run, however small the change is. `searchDeps` (a `Route` field inherited from the core) opts a level out of that by declaring which search keys its resolution consumes. The recommended shape is the one painless uses: the root layout declares `[]` (it renders the outlet and consumes nothing), each leaf declares exactly the keys its loader reads:
+
+```tsx
+import {createRoutes} from '@native-router/react';
+import {z} from 'zod';
+
+const homeSearch = z.object({
+  tag: z.string().optional(),
+  offset: z.coerce.number().default(0),
+  limit: z.coerce.number().default(20)
+});
+
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  searchDeps: [], // the layout consumes nothing from the search
+  children: [
+    {
+      path: '/',
+      search: homeSearch,
+      searchDeps: ['tag', 'offset', 'limit'], // exactly what the loader reads
+      component: () => import('./Home'),
+      data: ({search}) => fetchArticles(search)
+    }
+  ]
+});
+```
+
+- **Fast path:** the navigation targets the same pathname, **every level of the matched chain declares `searchDeps`**, and each level's projection is unchanged between the current entry and the target → the current view snapshot is committed as the new entry: zero guards, zero loaders, zero lazy loading, the same path a POP hitting the view stack takes. `navigate()` and both `useSearchParams`/`useSetSearch` write branches (push and `{replace: true}`) take it — the check is the core's `reusableEntry`
+- **Chain coverage is all-or-nothing:** one undeclared level re-resolves the whole chain on every navigation — the behavior before this feature, byte for byte. That is why the layout declares `[]` too: miss one level and the whole chain falls back to re-resolving on every search change
+- **Schema and guard keys count as consumed:** the fast path runs no schema and no `beforeLoad`. Keys your `search` schema validates strictly belong in `searchDeps` (otherwise their invalid values land in the URL unchecked), and a guard reading a search key will not re-run when it changes unless the key is declared. `useSetSearch(schema)` still validates the whole value against the schema before any navigation, whatever the declared keys
+- **The reused view is a snapshot:** it keeps the `data` and matched `ctx` of the resolve that produced it; read live search through `useSearch`/`useSearchParams` — they subscribe to history and are always current — never through the matched context. `hash`/`state` never take part either: on a fully declared chain a hash-only navigation reuses the snapshot too
+- **No View Transition, scroll reset as usual:** a reused navigation keeps the same view reference, so nothing animates; `ScrollRestoration`'s `resetOnPush` scrolls each new push entry back to the top exactly as before
+- `invalidate()` drops the snapshots and the fast path stays off until the next real resolve; POP replay, `initHistoryStack` warm-up and `refresh()` are untouched
 
 ## Install
 

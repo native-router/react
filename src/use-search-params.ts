@@ -5,6 +5,7 @@ import {
   parseSearchInput,
   parseSearchSync,
   resolveEntry,
+  reusableEntry,
   toLocation
 } from '@native-router/core';
 import type {
@@ -35,7 +36,11 @@ type SetSearchParams = (
  * semantics), pass `{replace: true}` to rewrite the current entry instead.
  * Since the search is part of the location, every write re-resolves the
  * matched route, so route `data` fetchers(see {@link useData}) observe the
- * new search on the next {@link useData} read.
+ * new search on the next {@link useData} read — unless the route opts
+ * into {@link Route.searchDeps searchDeps} and the write leaves the
+ * declared keys untouched: then the current view snapshot is re-served
+ * with zero re-resolution(the schema still validates the whole value
+ * before navigating, whatever the declared keys).
  *
  * @group Hooks
  * @returns [searchParams, setSearchParams] - the current search params and
@@ -146,11 +151,20 @@ function setSearch(
   const {history} = router;
   const {pathname, hash} = history.location;
   const to = pathname + (qs ? `?${qs}` : '') + hash;
+  const location = toLocation(router, to);
   if (opts?.replace) {
+    // The searchDeps fast path first: a same-route update whose declared
+    // projection is unchanged re-serves the current view(snapshot
+    // semantics — no guards, no loaders) instead of resolving. Blockers
+    // still sit at the head of commitReplace itself.
+    const reusable = reusableEntry(router, location);
+    if (reusable) {
+      return commitReplace(router, reusable.task, reusable.location);
+    }
     // Route guards run like any other navigation(align with the push
     // branch): the entry carries the terminal location, so a redirect
     // replaces the current entry with its final target.
-    return resolveEntry(router, toLocation(router, to)).then((entry) =>
+    return resolveEntry(router, location).then((entry) =>
       commitReplace(router, entry.task, entry.location)
     );
   }

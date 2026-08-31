@@ -76,6 +76,7 @@ function Preview({visible}: {visible: boolean}) {
 - `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——`data` loader 与 `beforeLoad` 守卫都拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
 - search 类型闭环：`createRoutes(routes)` 重写返回表的类型，每层的 `data`/`beforeLoad` `ctx.search` 从该层自己的 schema 输出推导——不再需要 `Route<P, S>` 泛型或回调注解；显式写出的 `Route<P, S>` 泛型仍优先
+- 基于 `searchDeps` 的 search 精细失效（`Route` 字段，经 `createRoutes` 原样透传给 core）：在每层声明本层解析消费的 search 键，同路径导航若每层投影不变，直接复用当前视图快照——零守卫、零 loader、零懒加载；`useSearchParams`/`useSetSearch` 的写入（push 与 `{replace: true}`）走同一快路径，`useSetSearch(schema)` 写前仍对整体做 schema 校验
 - 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底；`TypedNavLink`/`TypedPrefetchLink` 把同样的收窄带给激活态链接与预取链接
 - Router 上下文：Router 组件的 `context` prop（或 `createRouter` 的 `context` 选项）给每个 router 实例固化一份同步值，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到——按实例注入依赖（API client、配置、i18n）而无需模块单例；不传则为 `undefined`，现有接入零改动
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
@@ -306,6 +307,42 @@ invalidate(queryArticle, [slug]);
 - **`queryFn`** —— 同一 fetch × 缓存的绑定，供路由生命周期之外的读取；mutation 经 loader resolve 的同一 key 写入与失效，路由通道与组件通道因此不会漂移。
 
 工厂本身是应用层胶水——缓存库、mock 层、DEV 校验——不是路由库 API。提炼自基于本路由构建的参考 SPA 模板 **painless**（完整实现见其 `src/util/dataLoader.ts`：双通道缓存、DevTool 造数、DEV 身份校验俱在）。
+
+## Search 精细失效
+
+同路径的 search 变化——翻页、筛选、收起面板——默认重解析整条链：每层的 `beforeLoad`、`data` loader 与懒加载 `component` 全部重跑，无论变化多小。`searchDeps`（`Route` 字段，随 core 继承）让每层声明自己解析消费哪些 search 键。推荐形态即 painless 的真实用法：根布局声明 `[]`（只渲染出口、不消费 search），叶子路由声明自己 loader 消费的键：
+
+```tsx
+import {createRoutes} from '@native-router/react';
+import {z} from 'zod';
+
+const homeSearch = z.object({
+  tag: z.string().optional(),
+  offset: z.coerce.number().default(0),
+  limit: z.coerce.number().default(20)
+});
+
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  searchDeps: [], // 布局层完全不消费 search
+  children: [
+    {
+      path: '/',
+      search: homeSearch,
+      searchDeps: ['tag', 'offset', 'limit'], // loader 读哪些键就声明哪些
+      component: () => import('./Home'),
+      data: ({search}) => fetchArticles(search)
+    }
+  ]
+});
+```
+
+- **快路径**：导航目标为同 pathname、匹配链上**每层都声明了 `searchDeps`**、每层投影在当前条目与目标之间不变 → 当前视图快照直接作为新条目提交：零守卫、零 loader、零懒加载，与 POP 命中视图栈是同一条路径。`navigate()` 与 `useSearchParams`/`useSetSearch` 的两个写入分支（push 与 `{replace: true}`）都走它——判定即 core 的 `reusableEntry`
+- **链上覆盖是全有或全无**：任一层未声明 → 每次导航整链重解析——本特性之前的行为，逐字节一致。所以布局层也要声明 `[]`：漏一层，整链退回每次 search 变化都重解析
+- **schema 与守卫消费的键也算消费**：快路径不跑 schema、不跑 `beforeLoad`。`search` schema 严格校验的键应列进 `searchDeps`（否则这些键的非法值会免校验落进 URL）；守卫读取的 search 键不声明，键变化时守卫就不会重跑。`useSetSearch(schema)` 无论声明了哪些键，写前仍对整体做 schema 校验
+- **复用的视图是快照**：保留产生该视图那次 resolve 的 `data` 与 matched `ctx`；活 search 用 `useSearch`/`useSearchParams` 读——它们订阅 history、恒最新——不要从 matched 上下文读。`hash`/`state` 同样永不参与比较：全声明链上纯 hash 导航也复用快照
+- **无 View Transition、滚动照常**：复用导航的视图引用未变，不会触发动画；`ScrollRestoration` 的 `resetOnPush` 照常把新 push 条目滚回顶部
+- `invalidate()` 清掉快照后快路径失效直到下一次真实 resolve；POP 回放、`initHistoryStack` 预热与 `refresh()` 不受影响
 
 ## 安装
 
