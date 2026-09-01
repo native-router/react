@@ -344,6 +344,38 @@ const routes = createRoutes({
 - **无 View Transition、滚动照常**：复用导航的视图引用未变，不会触发动画；`ScrollRestoration` 的 `resetOnPush` 照常把新 push 条目滚回顶部
 - `invalidate()` 清掉快照后快路径失效直到下一次真实 resolve；POP 回放、`initHistoryStack` 预热与 `refresh()` 不受影响
 
+## 与 TanStack Router 的结构性差异
+
+本 README 里的四项能力——视图栈、`searchDeps`、`useBlocker` 与 `viewTransition`——看起来像功能点，实际上每一项都是一种架构承诺，TanStack Router 对它们要么做法不同、要么没有对应物。下文关于 TanStack 的表述均核对自其当前文档（[tanstack.com/router](https://tanstack.com/router/latest/docs/framework/react/overview)）；native-router 侧的表述即源码行为。逐概念的迁移映射见 [docs/from-tanstack-router.md](./docs/from-tanstack-router.md)。
+
+### `viewStack`：后退落在快照上，不是落在 loader 缓存上
+
+每次提交的导航都会把已解析的视图存进路由器的内存视图栈；POP 直接命中该快照——不重新匹配路由、不跑守卫、不跑 loader、零请求。会话栈以有界尾部窗口的形式序列化进 `history.state`（`maxStackDepth`，默认 100）从而在刷新后幸存，启动时自动恢复，再用 `@native-router/core` 的 `initHistoryStack` 预热一次（上文的 `StackWarmer` 是示例组件模式，不是库的导出）。
+
+TanStack Router 没有对应物：后退就是一次普通导航——路由重新匹配，由其内置 SWR 缓存决定 loader 重跑什么。缓存以解析后的 pathname 加 `loaderDeps` 为键；`beforeLoad` 链无论如何每次导航都跑；默认 `staleTime: 0` 下，重新进入同一 loader key 会在后台 revalidate——即默认情况下后退会重新发请求，再靠 `staleTime`/`gcTime`/`shouldReload` 调优收敛。
+
+这个差异是结构性的，不是缓存调参问题：快照保留的是*解析产物视图*——同一个元素，连同它 resolve 期的 `data` 与匹配 `ctx`、已导入的懒 `component`——后退重新挂载的页面无需重跑任何东西、也无需等待（条目滚动偏移由 `ScrollRestoration` 复原；React 状态并不保留——组件是重新挂载的）。而 loader 缓存把数据重新喂给重新挂载的组件，默认过期策略下 loader 还会再跑一遍。「后退绝不运行用户代码」是视图栈的属性，不是缓存的一种配置。
+
+### `searchDeps`：一次什么也不跑的 search 变化
+
+同路径的 search 变化，若**匹配链上每层都声明了 `searchDeps`** 且所有声明的投影都没变，当前视图快照直接重新提交——零守卫、零 loader、零懒加载，与 POP 走的是同一条路径。链上覆盖是全有或全无：任一层未声明即恢复此前「每次导航都重解析」的行为，逐字节一致。上一节的接线规则原样适用：`search` schema 严格校验的键必须声明（快路径不跑 schema），`useSetSearch(schema)` 导航前仍对整体做校验。
+
+TanStack 最接近的旋钮是 `loaderDeps`，方向恰好相反：`loaderDeps` 是缓存*键*——deps 变了该路由就 reload，没变时默认的过期策略仍会在后台 revalidate；`beforeLoad` 两种情况都照跑。不存在哪种配置能让一次 search 变化真的什么也不跑。
+
+结构上这是 `viewStack` 机制在会话中途的应用——视图从未离开组件树，重新提交同一个元素引用会让 React 跳过该子树，组件状态得以保留——这也是为什么它无法靠把缓存调得「足够新鲜」来复现。
+
+### `useBlocker`：回摆在库内完成
+
+被否决的浏览器 POP 会被自动推回——core 自己回摆 history，不留下悬空的前进条目。询问面是 `{state, proceed, reset}`：`proceed()` 是一次性放行，且只绕过本 hook 自己的 blocker（其余已注册 blocker 与守卫链仍会被询问），重试是一次全新的 push 导航。谓词是同步的允许列表——返回 `true` 放行、`false` 否决、抛错视同否决（fail-closed）——在每次导航开头、POP 落位前被同步询问；`refresh` 与守卫重定向永不被拦。
+
+TanStack 的 `useBlocker({shouldBlockFn, withResolver, enableBeforeUnload})` 返回 `{status, proceed, reset}`，同样经由其 history 层拦截 popstate。谓词极性相反（`shouldBlockFn` 返回 `true` 是*拦截*，这里返回 `true` 是*放行*——脏检查要反过来写），决策可以是异步的（`withResolver` 延迟决断），`enableBeforeUnload` 还把浏览器的 unload 对话框耦合进 hook。这里决策在 history 事件内同步完成，回摆因此是即时的，确认 UI 三个 prop 就能接上——差异在分工，而不只是拼写。
+
+### `viewTransition`：库管时序，CSS 管范围
+
+库把提交包进 `document.startViewTransition(() => flushSync(render))`，并置于提交闸门之后——过渡打开期间，store 快照持续返回旧视图，只有过渡回调提交新视图，因此任何东西（loading 重渲染、POP 之后的窗口同步）都无法抢在浏览器截旧帧之前提交。方向挂在过渡 `types` 上（`:active-view-transition-type(push|pop)`），`true` 只动画 push——`pop` 落在 `viewStack` 快照上，动画只会拖慢后退——谓词按 `{action, to, from}` 逐导航决断。库从不挂 `view-transition-name`、从不注入 CSS；动画什么完全由调用方的样式表决定。
+
+TanStack Router 按导航（`Link`/`navigate` 上的 `viewTransition`）或全路由器（`defaultViewTransition`）开启：`true` 把导航包进 `startViewTransition()`，没有方向过滤；`ViewTransitionOptions.types` 由你自己从 `{fromLocation, toLocation, pathChanged, …}` 计算类型标签（返回 `false` 则跳过过渡）。那边动画范围同样是调用方的 CSS——这一半属于平台而非某个库。差异在默认谓词（push-only，因为 pop 是快照命中）、action→types 的自动映射，以及提交闸门是文档化行为而非实现细节。
+
 ## 安装
 
 ```bash

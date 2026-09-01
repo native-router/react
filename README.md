@@ -344,6 +344,38 @@ const routes = createRoutes({
 - **No View Transition, scroll reset as usual:** a reused navigation keeps the same view reference, so nothing animates; `ScrollRestoration`'s `resetOnPush` scrolls each new push entry back to the top exactly as before
 - `invalidate()` drops the snapshots and the fast path stays off until the next real resolve; POP replay, `initHistoryStack` warm-up and `refresh()` are untouched
 
+## Structural differences vs TanStack Router
+
+Four capabilities in this README — the view stack, `searchDeps`, `useBlocker` and `viewTransition` — read like features, but each is an architectural commitment that TanStack Router makes differently or not at all. The TanStack statements below are checked against its current docs at [tanstack.com/router](https://tanstack.com/router/latest/docs/framework/react/overview); the native-router side is what the source does. A concept-by-concept migration map lives in [docs/from-tanstack-router.md](./docs/from-tanstack-router.md).
+
+### `viewStack`: back lands on a snapshot, not on a loader cache
+
+Every committed navigation stores its resolved view in the router's in-memory view stack; a POP lands on that snapshot — no re-match, no guards, no loaders, no requests. The session stack survives a refresh as a bounded tail window serialized into `history.state` (`maxStackDepth`, default 100), restored on startup and warmed once by `initHistoryStack` from `@native-router/core` (the `StackWarmer` above is an example component pattern, not a library export).
+
+TanStack Router has no counterpart: back is an ordinary navigation — the route re-matches, and its built-in SWR cache decides what a loader re-runs. The cache is keyed on the parsed pathname plus `loaderDeps`; the `beforeLoad` chain runs on every navigation regardless; and with the default `staleTime: 0`, re-entering a loader key revalidates in the background — so back fires requests by default, tuned away through `staleTime`/`gcTime`/`shouldReload`.
+
+The difference is structural, not a matter of cache tuning: a snapshot retains the *resolved view* — the same element carrying its resolve-time `data` and matched `ctx`, the lazy `component` already imported — so the page back re-mounts has nothing to re-run and nothing to wait for (`ScrollRestoration` restores the entry's scroll offset; React state is not retained — the component mounts fresh). A loader cache re-feeds a re-mounted component, and with default staleness its loaders fire again. "Back never runs user code" is a property of the stack, not a configuration of a cache.
+
+### `searchDeps`: a search change that runs nothing
+
+On a same-path search change where **every level of the matched chain declares `searchDeps`** and no declared projection changed, the current view snapshot is re-committed — zero guards, zero loaders, zero lazy imports, the same path a POP takes. Chain coverage is all-or-nothing: one undeclared level restores the resolve-on-every-navigation behavior byte for byte. The wiring rule from the previous section applies unchanged: keys the `search` schema validates strictly must be declared (the fast path runs no schema), and `useSetSearch(schema)` still validates the whole value before navigating.
+
+TanStack's nearest knob is `loaderDeps`, and it points the other way: `loaderDeps` is a cache *key* — when the deps change the route reloads, and when they don't, default staleness still revalidates in the background; `beforeLoad` keeps running either way. There is no configuration in which a search change runs literally nothing.
+
+Structurally this is the `viewStack` mechanism applied mid-session — the view never leaves the tree, and re-committing the identical element reference makes React skip the subtree, so component state survives — which is why it cannot be reproduced by making a cache "fresh enough".
+
+### `useBlocker`: the rewind lives in the library
+
+A vetoed browser POP is automatically pushed back — the core rewinds the history itself, leaving no dangling forward entry. The ask surface is `{state, proceed, reset}`: `proceed()` is a one-shot bypass of this hook's own blocker only (other registered blockers and the guard chain are still asked), and the retry is a fresh push navigation. The predicate is a synchronous allow-list — `true` lets the navigation through, `false` vetoes, a throw counts as a veto (fail-closed) — asked at the head of every navigation and before a POP lands; `refresh` and guard redirects are never blocked.
+
+TanStack's `useBlocker({shouldBlockFn, withResolver, enableBeforeUnload})` returns `{status, proceed, reset}` and also intercepts popstate through its history layer. The predicate polarity is reversed (`shouldBlockFn` returning `true` *blocks*; here `true` *allows* — invert your dirtiness check), the decision may be asynchronous (`withResolver` defers it), and `enableBeforeUnload` couples the browser's unload dialog into the hook. Here the decision is made synchronously inside the history event, so the rewind is immediate and the confirm UI is three props wide — the division of labor differs, not just the spelling.
+
+### `viewTransition`: the library owns timing, CSS owns scope
+
+The library wraps the commit in `document.startViewTransition(() => flushSync(render))` behind a commit gate — while a transition is open, the store snapshot keeps serving the old view and only the transition callback commits the new one, so nothing (a loading re-render, the post-POP window sync) can commit before the browser captures the old frame. The direction rides the transition `types` (`:active-view-transition-type(push|pop)`), `true` animates pushes only — a `pop` lands on a `viewStack` snapshot and animating it would only slow the back button — and a predicate decides per navigation on `{action, to, from}`. The library never assigns a `view-transition-name` and never injects CSS; what animates is the caller's stylesheet.
+
+TanStack Router opts in per navigation (`viewTransition` on `Link`/`navigate`) or router-wide (`defaultViewTransition`): `true` wraps navigations in `startViewTransition()` with no direction filter, and `ViewTransitionOptions.types` computes the type tags from `{fromLocation, toLocation, pathChanged, …}` yourself (returning `false` skips the transition). Scope is the caller's CSS there too — that part is the platform's, not the library's. What differs is the default predicate (push-only, because a pop is a snapshot hit), the automatic action→types mapping, and the commit gate as documented behavior rather than an implementation detail.
+
 ## Install
 
 ```bash
