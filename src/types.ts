@@ -120,7 +120,8 @@ export type RouteParams<P extends string> = string extends P
  * `useSearch`
  * for the typed degraded shape. Prefer {@link createRoutes}: its
  * returned table derives every level's `ctx.search` from the level's own
- * schema(see {@link SearchRoutesOf}), so the manual generic is only
+ * schema and every level's `ctx.params` from the accumulated path
+ * patterns(see {@link SearchRoutesOf}), so the manual generics are only
  * needed for hand-annotated route objects.
  * `children` accepts `Route<any, any>` so levels with different patterns
  * and search shapes nest without variance conflicts.
