@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@native-router/core':
-        specifier: ^1.12.0
-        version: 1.12.0
+        specifier: ^1.13.0
+        version: 1.13.0
       history:
         specifier: ^5.3.0
         version: 5.3.0
@@ -1202,8 +1202,8 @@ packages:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
 
-  '@native-router/core@1.12.0':
-    resolution: {integrity: sha512-a4jRNKcAlRH09GoLxpzuVqb9wdCfr3g5U5b5hhqA/IBqLIrxeDLkkdhv5rmerG6tflpuyN82gzm4JimrqlBjtQ==}
+  '@native-router/core@1.13.0':
+    resolution: {integrity: sha512-Z0ONpV7lihIU4zT22078s9TyNecgD5rho31DMBdhpZs0jEJLHhw0vAhLgK3ikIjsvPnLNceV0ZaBkICOSoMz5Q==}
     engines: {node: '>=18'}
 
   '@nodelib/fs.scandir@2.1.5':
@@ -6430,7 +6430,7 @@ snapshots:
       '@tybys/wasm-util': 0.10.3
     optional: true
 
-  '@native-router/core@1.12.0':
+  '@native-router/core@1.13.0':
     dependencies:
       history: 5.3.0
       path-to-regexp: 8.4.2

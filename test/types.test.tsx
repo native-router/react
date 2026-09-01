@@ -781,6 +781,173 @@ describe('createRoutes search closure', () => {
   });
 });
 
+// 任务：createRoutes 的 params 类型闭环——返回表上每层 data/beforeLoad 的
+// ctx.params 从匹配前缀的 path 字面量累积推导（SearchRoutesOf 的第二/三
+// 泛型）；beforeLoad 侧额外尊重 params schema 的输出替换，data 侧恒为
+// 原始字符串（resolve-view 的 mergeMatchedParams 语义）。
+describe('createRoutes params closure', () => {
+  // painless editorParamsSchema 同款：trim slug。
+  const slugSchema: StandardSchemaV1<unknown, {slug: string}> = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value) => {
+        const slug = String((value as {slug?: unknown}).slug ?? '').trim();
+        return slug
+          ? {value: {slug}}
+          : {issues: [{message: 'empty slug', path: ['slug']}]};
+      }
+    }
+  };
+
+  it('should derive ctx.params of data and beforeLoad from the path pattern', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/article/:title',
+          beforeLoad: ({params}) => (params.title ? undefined : '/'),
+          data: ({params}): string => params.title
+        }
+      ]
+    });
+    void routes;
+    type ArticleRoute = NonNullable<(typeof routes)['children']>[number];
+    expectTypeOf<
+      Parameters<NonNullable<ArticleRoute['data']>>[0]['params']
+    >().toEqualTypeOf<{title: string}>();
+    expectTypeOf<
+      Parameters<NonNullable<ArticleRoute['beforeLoad']>>[0]['params']
+    >().toEqualTypeOf<{title: string}>();
+    // 消费方不再需要 params.title! 断言（title 必有）。
+    expectTypeOf<
+      ReturnType<NonNullable<ArticleRoute['data']>>
+    >().toEqualTypeOf<string>();
+  });
+
+  it('should accumulate the params of the matched prefix through children', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/users/:userId',
+          children: [
+            {
+              path: '/posts/:postId',
+              data: ({params}) => `${params.userId}/${params.postId}`,
+              beforeLoad: ({params}) =>
+                params.postId && params.userId ? undefined : '/'
+            }
+          ]
+        }
+      ]
+    });
+    void routes;
+    type Post = NonNullable<
+      NonNullable<
+        NonNullable<(typeof routes)['children']>[number]['children']
+      >[number]
+    >;
+    expectTypeOf<
+      Parameters<NonNullable<Post['data']>>[0]['params']
+    >().toEqualTypeOf<{userId: string; postId: string}>();
+    expectTypeOf<
+      Parameters<NonNullable<Post['beforeLoad']>>[0]['params']
+    >().toEqualTypeOf<{userId: string; postId: string}>();
+  });
+
+  it('should type the guard through the params schema output, the loader raw', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/editor/:slug',
+          params: slugSchema,
+          beforeLoad: ({params}) => (params.slug ? undefined : '/'),
+          data: ({params}): string => params.slug
+        }
+      ]
+    });
+    void routes;
+    type EditorRoute = NonNullable<(typeof routes)['children']>[number];
+    // beforeLoad 拿到 schema 输出（coerce 后）。
+    expectTypeOf<
+      Parameters<NonNullable<EditorRoute['beforeLoad']>>[0]['params']
+    >().toEqualTypeOf<{slug: string}>();
+    // data 拿到原始字符串 params（resolve-view 的 mergeMatchedParams）。
+    expectTypeOf<
+      Parameters<NonNullable<EditorRoute['data']>>[0]['params']
+    >().toEqualTypeOf<{slug: string}>();
+  });
+
+  it('should let a deeper schema replace the accumulated guard params', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/users/:id',
+          children: [
+            {
+              path: '/files/:name',
+              params: slugSchema,
+              beforeLoad: ({params}) => (params.slug ? undefined : '/')
+            }
+          ]
+        }
+      ]
+    });
+    void routes;
+    type File = NonNullable<
+      NonNullable<
+        NonNullable<(typeof routes)['children']>[number]['children']
+      >[number]
+    >;
+    // schema 输出整体替换：守卫不再看到 id/name 原始键。
+    expectTypeOf<
+      Parameters<NonNullable<File['beforeLoad']>>[0]['params']
+    >().toEqualTypeOf<{slug: string}>();
+  });
+
+  it('should keep param-less levels on the loose Record shape', () => {
+    const routes = createRoutes({
+      children: [
+        {path: '/plain', data: ({params}): number => Object.keys(params).length}
+      ]
+    });
+    void routes;
+    type PlainRoute = NonNullable<(typeof routes)['children']>[number];
+    // 无参数模式：params 保持宽松 Record<string, string>（渐进精确）。
+    expectTypeOf<
+      Parameters<NonNullable<PlainRoute['data']>>[0]['params']
+    >().toEqualTypeOf<Record<string, string>>();
+  });
+
+  it('should stay assignable to Route[] for Router/createRouter', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/article/:title',
+          data: ({params}): string => params.title
+        }
+      ]
+    });
+    // Router 的 routes prop 是 Route[] | Route：方法声明的双变性让精确
+    // params 的返回表仍然可赋值（与 Route<'/users/:id'> 手动泛型同款）。
+    const asRoutes: Route[] = routes['children']!;
+    void asRoutes;
+  });
+
+  it('should accept painless-style loose loader annotations unchanged', () => {
+    // painless keyOf/装载层模式：可选属性 + ! 收窄的宽松注解，逆变的
+    // 「必有 → 可选」方向保持兼容。
+    const articleLoader = ({
+      params
+    }: {
+      params: {title?: string};
+    }): Promise<string> => Promise.resolve(params.title ?? '');
+    const routes = createRoutes({
+      children: [{path: '/article/:title', data: articleLoader}]
+    });
+    void routes;
+  });
+});
+
 // 任务：useBlocker 谓词契约（返回 `true` 放行、`false` 否决）在类型层
 // 能钉住的那一半。「返回 true = 阻止」的方向性误读无法靠类型区分
 // （true/false 同为 boolean），那半边靠 src/use-blocker.ts 的 JSDoc 与

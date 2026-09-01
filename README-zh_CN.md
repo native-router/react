@@ -73,9 +73,9 @@ function Preview({visible}: {visible: boolean}) {
 - 可取消的异步导航：发起下一次导航会取代进行中的导航；`cancel(router)` 主动中止；history POP 也会取消——同时导航链的 `AbortSignal` 以 `ctx.signal` 传入每个 `data` loader（`fetch(url, {signal: ctx.signal})`），被取代的导航真正停止请求而非仅丢弃结果
 - `NavLink`：`isActive`/`isExactActive`、`end`、`caseSensitive` 与 `aria-current`（默认 `"page"`）；`className`/`style`/`children` 支持 `({isActive, isExactActive})` 回调；`to="/"` 对所有路径都是激活态
 - 多态链接：四个 Link 组件都接受 `as` 组件——组件自有 props 摊平到链接上并做类型检查，冲突 props 走 `asProps` 逃生舱，`href`/`onClick`/`aria-current` 由链接注入，`ref` 透传
-- `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）
+- `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）；`writeSchema(schema, defaults)`（core 导出）派生写侧投影，等于缺省的键被抹去，URL 保持干净
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——`data` loader 与 `beforeLoad` 守卫都拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
-- search 类型闭环：`createRoutes(routes)` 重写返回表的类型，每层的 `data`/`beforeLoad` `ctx.search` 从该层自己的 schema 输出推导——不再需要 `Route<P, S>` 泛型或回调注解；显式写出的 `Route<P, S>` 泛型仍优先
+- search 与 params 类型闭环：`createRoutes(routes)` 重写返回表的类型，每层的 `data`/`beforeLoad` `ctx.search` 从该层自己的 schema 输出推导，`ctx.params` 从匹配前缀的 path 字面量累积推导（`beforeLoad` 额外尊重前缀 `params` schema 的输出）——不再需要 `Route<P, S>` 泛型或回调注解；无参数的层保持宽松 `Record<string, string>`，显式写出的 `Route<P, S>` 泛型仍优先
 - 基于 `searchDeps` 的 search 精细失效（`Route` 字段，经 `createRoutes` 原样透传给 core）：在每层声明本层解析消费的 search 键，同路径导航若每层投影不变，直接复用当前视图快照——零守卫、零 loader、零懒加载；`useSearchParams`/`useSetSearch` 的写入（push 与 `{replace: true}`）走同一快路径，`useSetSearch(schema)` 写前仍对整体做 schema 校验
 - 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底；`TypedNavLink`/`TypedPrefetchLink` 把同样的收窄带给激活态链接与预取链接
 - Router 上下文：Router 组件的 `context` prop（或 `createRouter` 的 `context` 选项）给每个 router 实例固化一份同步值，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到——按实例注入依赖（API client、配置、i18n）而无需模块单例；不传则为 `undefined`，现有接入零改动
@@ -308,6 +308,36 @@ invalidate(queryArticle, [slug]);
 
 工厂本身是应用层胶水——缓存库、mock 层、DEV 校验——不是路由库 API。提炼自基于本路由构建的参考 SPA 模板 **painless**（完整实现见其 `src/util/dataLoader.ts`：双通道缓存、DevTool 造数、DEV 身份校验俱在）。
 
+## 无 `<Await>` 的延迟数据
+
+TanStack Router 内置了延迟数据原语：loader 对次要数据不 await、直接返回 promise，视图用 `<Await>` 包住它，页面随 settle 流式补齐。本路由刻意不做——答案是上面两条通道加原生 React 的组合：
+
+- **首屏必需数据走 loader，阻塞式 resolve。** 视图整体提交——冷启动由 `pendingComponent` 兜底，应用内导航保留旧视图直到新视图就绪——关键路径上没有任何客户端 promise 管道，且每个已提交的视图都是完整快照（后退/前进、预取预览、视图过渡全部建立在它上面）。
+- **次要数据——评论、侧栏、推荐——走组件通道，从不阻塞。** 组件自己经 `queryFn` 取数，loading 态长在数据渲染的地方：painless 的评论列表在上方文章已可交互时渲染自己的 `Spinner`（`src/views/Article/CommentList.tsx`，绑定见 `src/services/dataloaders.ts`）。
+- **想要 `<Await>` 的人体工学——声明式 fallback 而非手写 loading 标记？** 这正是 React `<Suspense>` 的本职，react-toolroom 的 `useSuspenseResult` 把在途结果递给它：读取者挂起直到首个结果存在，驱动方在边界外发起取数。同样的延迟效果，标准件组合，零路由 API 介入：
+
+```tsx
+import {Suspense} from 'react';
+import {useRun, useSuspenseResult} from 'react-toolroom/async';
+
+function ArticleComments({slug}: {slug: string}) {
+  const fetchComments = useInjectable(queryComments);
+  useRun(fetchComments, [slug]); // 在边界外——被挂起子树的 effect 不会跑
+  return (
+    <Suspense fallback={<Spinner />}>
+      <CommentReader fetchComments={fetchComments} />
+    </Suspense>
+  );
+}
+
+function CommentReader({fetchComments}: {fetchComments: typeof queryComments}) {
+  const comments = useSuspenseResult(fetchComments); // 只挂起一次
+  return comments.map((c) => <Comment key={c.id} {...c} />);
+}
+```
+
+取舍：`<Await>` 给你 promise 类型的 loader 返回与路由管流的流式提交，代价是部分提交；本路由保持提交原子性，把延迟渲染下放到组件层——Suspense、错误边界与实体缓存本就住在那里。**painless** 是两条通道的活参考，通道切分的论证见其 `decisions.md`。
+
 ## Search 精细失效
 
 同路径的 search 变化——翻页、筛选、收起面板——默认重解析整条链：每层的 `beforeLoad`、`data` loader 与懒加载 `component` 全部重跑，无论变化多小。`searchDeps`（`Route` 字段，随 core 继承）让每层声明自己解析消费哪些 search 键。推荐形态即 painless 的真实用法：根布局声明 `[]`（只渲染出口、不消费 search），叶子路由声明自己 loader 消费的键：
@@ -501,6 +531,8 @@ import {ScrollRestoration} from '@native-router/react';
 
 用 `createRoutes` 构建路由表，类型自动闭环：返回表上每层的 `ctx.search` 从该层自己的 schema 推导，`Route<P, S>` 泛型与回调注解都不再需要。（字面量内直接写的回调按宽松 `Route` 检查——`ctx.search: any`——TypeScript 无法用同级属性做上下文类型；精确类型在返回表上成立，与 schema 矛盾的回调注解会在属性处被拒。）
 
+`ctx.params` 走同一闭环，从匹配前缀的 path 字面量累积推导：`data` loader 拿到累积的原始字符串 params，`beforeLoad` 守卫拿到经前缀 `params` schema 升级后的值。模式里没有参数的层保持宽松 `Record<string, string>`——精度是渐进的，既有路由表不会被重定型：
+
 ```tsx
 import {createRoutes, useData, useSearch} from '@native-router/react';
 import {z} from 'zod';
@@ -514,11 +546,12 @@ const routes = createRoutes({
   component: () => import('./Layout'),
   children: [
     {
-      path: '/articles',
+      path: '/articles/:slug',
       search: listSearch,
       component: () => import('./ArticleList'),
-      // typeof routes → 本层 ctx.search: {page: number; tag?: string}
-      data: ({search}) => fetchArticles(search.page, search.tag),
+      // typeof routes → 本层 ctx.search: {page: number; tag?: string}，
+      //                ctx.params: {slug: string}——零注解
+      data: ({search, params}) => fetchArticles(params.slug, search.tag),
       errorComponent: ({error}) => <p>{error.message}</p>
     }
   ]
@@ -558,6 +591,16 @@ function Pager() {
   }
   // ...
 }
+```
+
+写入 schema 自身的输出意味着缺省值会落进 query——每个链接都挂着 `?page=1`。要干净的 URL，用 `@native-router/core` 的 `writeSchema(schema, defaults)` 一次性派生写侧：它经同一读契约校验并抹去等于缺省的键，一份读 schema 管住双向，手写的写侧孪生不再需要：
+
+```tsx
+import {writeSchema} from '@native-router/core';
+
+const listWrite = writeSchema(listSearch, {page: 1});
+// useSetSearch(listWrite)：{page: 1} 写出 ''（干净），{page: 3} 写出 '?page=3'
+const setSearch = useSetSearch(listWrite);
 ```
 
 给整个 router 一份自己的上下文——依赖、配置、i18n 句柄——不用模块单例：给 Router 组件（或 `createRouter`）传 `context`，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到它，每实例一份。每个测试一个 router，fixture 不串；每个微前端面板一个 router，面板之间不共享状态。

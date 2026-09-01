@@ -213,28 +213,105 @@ export type RouteSearchOf<R> = R extends {
 export type WithSearch<C, S> = Omit<C, 'search'> & {search: S};
 
 /**
+ * A context with only its `params` member replaced. An accumulated
+ * params type of `unknown`(no path pattern contributed anything — see
+ * {@link SearchRoutesOf}) passes the context through unchanged, so
+ * param-less levels keep their original loose `Record<string, string>`.
+ * @group Types
+ * @category Route
+ */
+export type WithParams<C, P> = [unknown] extends [P]
+  ? C
+  : Omit<C, 'params'> & {params: P};
+
+/**
+ * The base every re-typed loader/guard context stands on: the loose
+ * context when the callback declared none(a zero-arg `data: () => view`
+ * infers `unknown`), intersected with the author's own annotation when
+ * it did. Standing on the loose members keeps the re-typed function
+ * assignable to the loose `Route` signatures(their method declarations
+ * compare bivariantly — precise `params` are assignable to the raw
+ * string map) while the author's custom shapes survive the intersection.
+ */
+type LooseCtxBase<Loose, C> = [unknown] extends [C] ? Loose : Loose & C;
+
+/**
+ * Params contributed by a level's own `path` pattern: the precise
+ * {@link RouteParams} shape for a literal pattern, the legacy
+ * `Record<string, string>` for a widened one, and `unknown`(nothing —
+ * the accumulator identity) for a path-less layout level or a pattern
+ * without params. Building block of {@link SearchRoutesOf}.
+ */
+type OwnPathParamsOf<T> = T extends {path?: infer PathT}
+  ? [unknown] extends [PathT]
+    ? unknown
+    : PathT extends string
+      ? keyof RouteParams<PathT> extends never
+        ? unknown // A literal pattern without params: keep the loose shape
+        : RouteParams<PathT>
+      : unknown // `path?: undefined` — a layout level
+  : unknown;
+
+/**
+ * Output type of a level's {@link Route.params params schema} when it
+ * declares one, `unknown` otherwise.
+ */
+type ParamsSchemaOutputOf<T> = T extends {
+  params: CoreStandardSchemaV1<any, infer Output>;
+}
+  ? Output
+  : unknown;
+
+/**
+ * The runtime's level-by-level params spread `{...a, ...b}`:
+ * `b`'s keys override `a`'s. `unknown` on either side is the
+ * accumulator identity. The result is flattened so hovers and strict
+ * type equality see one plain object.
+ */
+type MergeParams<A, B> = [unknown] extends [A]
+  ? B
+  : [unknown] extends [B]
+    ? A
+    : Flatten<Omit<A, keyof B> & B>;
+
+/** Flatten an intersection of params objects into one plain object. */
+type Flatten<T> = {[K in keyof T]: T[K]};
+
+/**
  * Re-type a route table so every level's `data` loader and `beforeLoad`
- * guard derive their `ctx.search` from the level's own
- * {@link Route.search search schema}: the schema's parsed output(see
- * {@link RouteSearchOf}) instead of the loose `any`. This is what
- * {@link createRoutes} returns, closing the type loop — no manual
- * `Route<P, S>` generics or callback annotations needed for the search
- * typing.
+ * guard derive their `ctx.search` AND `ctx.params` from the table
+ * itself, closing both type loops — this is what {@link createRoutes}
+ * returns.
+ *
+ * `ctx.search` comes from the level's own {@link Route.search search
+ * schema} output(see {@link RouteSearchOf}). `ctx.params` mirrors the
+ * runtime's accumulation: `data` loaders see the raw string params of
+ * the matched prefix(`mergeMatchedParams`), `beforeLoad` guards see
+ * them upgraded by any prefix level's {@link Route.params params
+ * schema}(the deepest schema output seen replaces the map, deeper raw
+ * segments spread over it). A level without params in its pattern — or
+ * a whole table of widened paths — keeps the loose `Record<string,
+ * string>` it always had: precision is progressive, never a breaking
+ * re-type.
  *
  * Everything else passes through unchanged: `path` literals(so
  * `RoutePaths<typeof routes>` and `TypedLink` keep working), the
  * loaders' return types, and the rest of every level's members. A
- * callback that annotates its ctx with a search shape the schema
- * contradicts is rejected at the `data`/`beforeLoad` property; an
- * un-annotated callback written inside the literal is checked loosely
- * against `Route`(`ctx.search: any` — TypeScript cannot contextually
- * type a member from sibling properties) and precisely on the returned
- * table.
+ * callback that annotates its ctx with a shape the table contradicts
+ * is rejected at the `data`/`beforeLoad` property; an un-annotated
+ * callback written inside the literal is checked loosely against
+ * `Route`(`ctx.search: any`, `ctx.params: Record<string, string>` —
+ * TypeScript cannot contextually type a member from sibling
+ * properties) and precisely on the returned table.
  * @group Types
  * @category Route
  */
-export type SearchRoutesOf<T> = T extends readonly unknown[]
-  ? {-readonly [K in keyof T]: SearchRoutesOf<T[K]>}
+export type SearchRoutesOf<
+  T,
+  GuardP = unknown,
+  RawP = unknown
+> = T extends readonly unknown[]
+  ? {-readonly [K in keyof T]: SearchRoutesOf<T[K], GuardP, RawP>}
   : T extends Route
     ? T extends {
         data?: infer Data;
@@ -242,19 +319,51 @@ export type SearchRoutesOf<T> = T extends readonly unknown[]
         children?: infer Children;
       }
       ? Omit<T, 'data' | 'beforeLoad' | 'children'> & {
+          // The raw prefix params the data loader receives; the
+          // schema-aware value the guard receives (a level's params
+          // schema output replaces the whole accumulated map). The
+          // re-typed contexts stand on the loose bases so zero-arg and
+          // partially-annotated callbacks stay assignable to `Route`.
           data?: [unknown] extends [Data]
             ? undefined
             : Data extends (ctx: infer DataCtx) => infer R
-              ? (ctx: WithSearch<DataCtx, RouteSearchOf<T>>) => R
+              ? (
+                  ctx: WithParams<
+                    WithSearch<
+                      LooseCtxBase<Context<Route>, DataCtx>,
+                      RouteSearchOf<T>
+                    >,
+                    MergeParams<RawP, OwnPathParamsOf<T>>
+                  >
+                ) => R
               : Data;
           beforeLoad?: [unknown] extends [BeforeLoad]
             ? undefined
             : BeforeLoad extends (ctx: infer GuardCtx) => infer R
-              ? (ctx: WithSearch<GuardCtx, RouteSearchOf<T>>) => R
+              ? (
+                  ctx: WithParams<
+                    WithSearch<
+                      LooseCtxBase<
+                        GuardContext<any, any, Record<string, string>, any>,
+                        GuardCtx
+                      >,
+                      RouteSearchOf<T>
+                    >,
+                    [unknown] extends [ParamsSchemaOutputOf<T>]
+                      ? MergeParams<GuardP, OwnPathParamsOf<T>>
+                      : ParamsSchemaOutputOf<T>
+                  >
+                ) => R
               : BeforeLoad;
           children?: [unknown] extends [Children]
             ? undefined
-            : SearchRoutesOf<Children>;
+            : SearchRoutesOf<
+                Children,
+                [unknown] extends [ParamsSchemaOutputOf<T>]
+                  ? MergeParams<GuardP, OwnPathParamsOf<T>>
+                  : ParamsSchemaOutputOf<T>,
+                MergeParams<RawP, OwnPathParamsOf<T>>
+              >;
         }
       : T
     : T;

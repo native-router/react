@@ -73,9 +73,9 @@ function Preview({visible}: {visible: boolean}) {
 - Cancelable async navigation: starting a new navigation supersedes the in-flight one; `cancel(router)` aborts it; a history POP cancels it too — and the chain's `AbortSignal` reaches every `data` loader as `ctx.signal` (`fetch(url, {signal: ctx.signal})`), so superseded navigations stop their requests instead of only having results dropped
 - `NavLink` with `isActive`/`isExactActive`, `end`, `caseSensitive` and `aria-current` (defaults to `"page"`); `className`/`style`/`children` accept `({isActive, isExactActive})` callbacks; `to="/"` is active for every path
 - Polymorphic links: every link component takes an `as` component — own props flattened and type-checked on the link, colliding props through the `asProps` escape hatch, `href`/`onClick`/`aria-current` injected, `ref` forwarded
-- `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied)
+- `useSearchParams` reads and writes the query string; writes push by default or replace with `{replace: true}`; `useSetSearch(schema)` is the schema-aware setter twin of `useSearch(schema)` — the next value is validated by the same schema before any navigation, a rejection throws `SearchError` without touching the location, and the written query is the schema's own output(defaults applied); `writeSchema(schema, defaults)` (from the core) derives a write projection that strips default-equal keys for clean URLs
 - Typed search: an optional Standard Schema validator (zod/valibot/arktype, no hard dependency) on any route `search` field, parsed at resolve time — `data` loaders and `beforeLoad` guards receive a typed `ctx.search` and an invalid search fails the level through the existing error layers; `useSearch(schema?)` reads it in components, degrading to the raw object without a schema
-- Search type closure: `createRoutes(routes)` re-types the returned table so every level's `data`/`beforeLoad` `ctx.search` derives from the level's own schema — no `Route<P, S>` generics or callback annotations needed; an explicit `Route<P, S>` generic still wins wherever written
+- Search and params type closure: `createRoutes(routes)` re-types the returned table so every level's `data`/`beforeLoad` `ctx.search` derives from the level's own schema and `ctx.params` from the accumulated path patterns of the matched prefix (`beforeLoad` additionally honors a prefix `params` schema's output) — no `Route<P, S>` generics or callback annotations needed; param-less levels keep the loose `Record<string, string>`, and an explicit `Route<P, S>` generic still wins wherever written
 - Fine-grained search invalidation via `searchDeps` on every route level (the field passes through `createRoutes` to the core): declare the search keys a level's resolution consumes and a same-path navigation that leaves every declared projection unchanged re-serves the current view snapshot — zero guards, zero loaders, zero lazy imports; `useSearchParams`/`useSetSearch` writes (push and `{replace: true}`) take the same fast path, and `useSetSearch(schema)` still validates the whole value before navigating
 - Type-safe links: `createRoutes(routes)` checks the table while keeping every `path` literal, `RoutePaths<typeof routes>` extracts the pattern union(through nesting and param segments), and `<TypedLink<RoutePaths<...>> to params>` narrows `to` to the table and checks `params` against the exact pattern's segments — compile errors for unknown paths and missing/wrong params, click-time interpolation with encoding as the runtime backstop; `TypedNavLink`/`TypedPrefetchLink` bring the same narrowing to the active-state and prefetching links. Give the link the whole table — `<TypedLink<typeof routes>>` — and `search` joins the discrimination too, typed by the pattern's route schema input(Standard Schema `~standard.types`, zod/valibot/arktype), serialized into the href and the navigation target; schema-less patterns keep `search` loose, and the paths-union flavor is untouched
 - Router context: a `context` prop on the Router components (or a `context` option on `createRouter`) bakes in one synchronous value per router instance, handed to every `data` loader and `beforeLoad` guard as `ctx.context` — per-instance deps (API client, config, i18n) without a module singleton; omit it and the context is `undefined`, existing setups unchanged
@@ -308,6 +308,36 @@ Why one factory for the three:
 
 The factory itself is application glue — cache library, mock layer, DEV checks — not router API. It is extracted from **painless**, the reference SPA template built on this router (see its `src/util/dataLoader.ts` for the full implementation: double-channel caching, DevTool mocks and the DEV identity check included).
 
+## Deferred data without `<Await>`
+
+TanStack Router ships a deferred-data primitive: a loader returns a promise for secondary data without awaiting it, and the view renders `<Await>` over it so the page streams in as it settles. This router deliberately does not — the answer is a composition of the two channels above plus plain React:
+
+- **First-screen-critical data rides the loader and blocks the resolve.** The view commits whole — `pendingComponent` covers the cold start, in-app navigation keeps the previous view until the new one is ready — so there is no client-side promise plumbing on the critical path, and every committed view is a complete snapshot (which is what back/forward, preload previews and view transitions are built on).
+- **Secondary data — comments, sidebars, recommendations — rides the component channel and never blocks.** The component fetches it itself through its `queryFn`, and the loading state lives where the data renders: painless' comment list renders its own `Spinner` while the article above it is already interactive (`src/views/Article/CommentList.tsx`, bound in `src/services/dataloaders.ts`).
+- **Want the `<Await>` ergonomics anyway — a declarative fallback instead of a manual loading flag?** That is what React's `<Suspense>` is for, and react-toolroom's `useSuspenseResult` hands it the in-flight result: the reader suspends until the first result exists, the owner drives the fetch from outside the boundary. Same deferred effect, standard pieces, no router API involved:
+
+```tsx
+import {Suspense} from 'react';
+import {useRun, useSuspenseResult} from 'react-toolroom/async';
+
+function ArticleComments({slug}: {slug: string}) {
+  const fetchComments = useInjectable(queryComments);
+  useRun(fetchComments, [slug]); // outside the boundary — effects of a
+  return (                       // suspended subtree never run
+    <Suspense fallback={<Spinner />}>
+      <CommentReader fetchComments={fetchComments} />
+    </Suspense>
+  );
+}
+
+function CommentReader({fetchComments}: {fetchComments: typeof queryComments}) {
+  const comments = useSuspenseResult(fetchComments); // suspends once
+  return comments.map((c) => <Comment key={c.id} {...c} />);
+}
+```
+
+The trade: `<Await>` gives you promise-typed loader returns and route-managed streaming at the cost of partial commits; this router keeps commits atomic and pushes deferred rendering to the component level, where Suspense, error boundaries and the entity cache already live. **painless** is the living reference for both channels — see `decisions.md` there for the channel-split reasoning.
+
 ## Fine-grained search invalidation
 
 A same-path search change — paging, filtering, collapsing a panel — normally re-resolves the whole chain: every level's `beforeLoad`, `data` loader and lazy `component` import re-run, however small the change is. `searchDeps` (a `Route` field inherited from the core) opts a level out of that by declaring which search keys its resolution consumes. The recommended shape is the one painless uses: the root layout declares `[]` (it renders the outlet and consumes nothing), each leaf declares exactly the keys its loader reads:
@@ -501,6 +531,8 @@ Validate and type the search with a schema — any zod/valibot/arktype schema wo
 
 Build the table with `createRoutes` and the typing closes by itself: the returned table derives every level's `ctx.search` from the level's own schema, so neither the manual `Route<P, S>` generic nor callback annotations are needed. (Callbacks written inside the literal are checked loosely — `ctx.search: any` — since TypeScript cannot contextually type a member from sibling properties; the precise types hold on the returned table, and a callback annotation that contradicts the schema is rejected at the property.)
 
+`ctx.params` closes the same way, from the matched prefix's path patterns: `data` loaders see the accumulated raw string params, `beforeLoad` guards see them upgraded by any prefix level's `params` schema. A level whose pattern has no params keeps the loose `Record<string, string>` — precision is progressive, existing tables never re-type.
+
 ```tsx
 import {createRoutes, useData, useSearch} from '@native-router/react';
 import {z} from 'zod';
@@ -514,11 +546,12 @@ const routes = createRoutes({
   component: () => import('./Layout'),
   children: [
     {
-      path: '/articles',
+      path: '/articles/:slug',
       search: listSearch,
       component: () => import('./ArticleList'),
-      // typeof routes → this level's ctx.search: {page: number; tag?: string}
-      data: ({search}) => fetchArticles(search.page, search.tag),
+      // typeof routes → ctx.search: {page: number; tag?: string},
+      //                ctx.params: {slug: string} — no annotations
+      data: ({search, params}) => fetchArticles(params.slug, search.tag),
       errorComponent: ({error}) => <p>{error.message}</p>
     }
   ]
@@ -558,6 +591,16 @@ function Pager() {
   }
   // ...
 }
+```
+
+Writing the schema's own output means defaults land in the query — every page link carries `?page=1`. For clean URLs derive the write side once with `writeSchema(schema, defaults)` from `@native-router/core`: it validates through the same read contract and strips every key equal to its default, so one read schema covers both directions and the hand-written write-side twin disappears:
+
+```tsx
+import {writeSchema} from '@native-router/core';
+
+const listWrite = writeSchema(listSearch, {page: 1});
+// useSetSearch(listWrite): {page: 1} writes '' (clean), {page: 3} writes '?page=3'
+const setSearch = useSetSearch(listWrite);
 ```
 
 Give the whole router its own context — deps, config, i18n handles — without a module singleton: pass `context` to the Router components (or `createRouter`) and every `data` loader and `beforeLoad` guard receives it as `ctx.context`, one value per router instance. A router per test keeps fixtures from leaking across tests; a router per micro-frontend pane keeps panes from sharing state.
