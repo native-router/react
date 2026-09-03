@@ -31,8 +31,8 @@ When migrating:
 
 - A TanStack **layout route** — chrome shared by a URL subtree: navigation, footer, data every page under it needs — becomes a layout level: the top object with `component` and `children` but no `path`, rendering `<View />` where the page goes.
 - A TanStack **nested route that exists for composition** — tabs inside a page, a master-detail pane, a dialog — does not become a route. A URL fragment whose state you want to keep is a *component in the page*, plus optionally search params; child routes are for fragments where a distinct URL should land on a distinct full page with its own lifecycle.
-- Index and fallback: a leaf child with `path: ''`, declared after its concrete siblings, serves as the parent's index route and as the fallback for paths unmatched under the parent.
-- Matching itself is leaner: routes match in **declaration order**, first match wins — there is no sorting by specificity. Trailing slashes are significant (`/users/` does not match `/users`), matching is case-sensitive, and params of nested levels merge deep over shallow.
+- Index and fallback: a leaf child with `path: ''` matches whatever is left under its parent, serving as the parent's index route and as the fallback for paths unmatched under the parent — siblings that match with real segments outrank it by specificity, so its declaration position no longer decides.
+- Matching itself is leaner: every matching chain is collected and the **most specific one wins** — per segment, static text outranks a dynamic `:param`, which outranks a splat `*wildcard`, and every segment adds to the chain's score so longer chains outrank shorter ones; **declaration order only breaks ties** between equally specific chains. A parent whose prefix matched but whose children all failed never hides later siblings. Trailing slashes are significant (`/users/` does not match `/users`), matching is case-sensitive, and params of nested levels merge deep over shallow.
 
 ## Deliberately not built
 

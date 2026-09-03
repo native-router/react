@@ -94,9 +94,9 @@ function Preview({visible}: {visible: boolean}) {
 
 ## Matching semantics
 
-- Routes match in **declaration order** and the first match wins — there is no sorting by specificity.
+- Every matching chain is collected and the **most specific one wins**: per path segment, static text outranks a dynamic `:param`, which outranks a splat `*wildcard`, and every segment adds to the chain's score — so longer chains (more of the URL pinned down) outrank shorter ones. Equally specific chains fall back to **declaration order**. A parent whose prefix matched but whose children all failed never hides later siblings — e.g. `[{path: '/a', children: [{path: '/b'}]}, {path: '/*rest'}]` serves `/a/q` from the wildcard.
 - A route **without `path`** is a layout: it matches the empty prefix and its children are matched against the full remaining path.
-- A leaf child with **`path: ''`** matches whatever is left under its parent. Declared after its concrete siblings it serves as the parent's index route (and as the fallback for paths unmatched under the parent).
+- A leaf child with **`path: ''`** matches whatever is left under its parent. It serves as the parent's index route (and as the fallback for paths unmatched under the parent) — siblings that match with real segments outrank it by specificity, so its declaration position no longer decides.
 - **Trailing slashes are significant**: `/users/` does not match `/users`.
 - Matching is **case-sensitive**.
 - Params of nested levels are merged **deep over shallow** (`mergeMatchedParams`): for `/:id` + `/posts/:id`, the deeper `id` wins.
