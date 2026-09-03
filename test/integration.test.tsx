@@ -551,9 +551,12 @@ describe('Integration(real core, real history)', () => {
       expect(screen.getByText('Home')).toBeDefined();
 
       // Navigate to A, then supersede it with B while A's loader is
-      // still parked. The superseding navigate aborts synchronously.
+      // still parked. The superseding navigate aborts synchronously. The
+      // catch is not decoration: against a core that rejects superseded
+      // navigations the fire-and-forget call would otherwise surface an
+      // unhandled rejection.
       await act(async () => {
-        void navigate(router, '/a');
+        void navigate(router, '/a').catch(() => undefined);
       });
       await act(async () => {
         void navigate(router, '/b');
@@ -567,7 +570,8 @@ describe('Integration(real core, real history)', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(loaderDone).toHaveBeenCalledTimes(1);
 
-      // The aborted loader's result is discarded: B rendered, A parked.
+      // The aborted loader's result is discarded: B rendered, A's
+      // navigation died unheard.
       expect(screen.getByText('B')).toBeDefined();
       expect(router.history.location.pathname).toBe('/b');
       releaseA?.();
