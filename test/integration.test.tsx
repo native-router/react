@@ -2927,6 +2927,96 @@ describe('Router context', () => {
     await flush();
     expect(seen).toEqual([undefined, undefined]);
   });
+
+  describe('route context', () => {
+    it('should fold route contexts into guards and per-level data loaders', async () => {
+      const seen: Array<[string, unknown]> = [];
+      function Leaf() {
+        return <h1>Leaf</h1>;
+      }
+      const routes = createRoutes({
+        path: '',
+        context: {theme: 'light'},
+        children: [
+          {
+            path: '/admin',
+            context: {role: 'admin', theme: 'dark'},
+            data: (ctx) => {
+              seen.push(['admin-data', ctx.context]);
+              return null;
+            },
+            children: [
+              {
+                path: '/audit',
+                context: {pane: 'audit'},
+                beforeLoad: ({context}) => {
+                  seen.push(['audit-guard', context]);
+                },
+                data: (ctx) => {
+                  seen.push(['audit-data', ctx.context]);
+                  return null;
+                },
+                component: () => Leaf
+              }
+            ]
+          }
+        ]
+      });
+      const api = {who: () => 'api'};
+      render(
+        <MemoryRouter
+          initialEntries={['/admin/audit']}
+          routes={routes}
+          context={api}
+        >
+          <View />
+        </MemoryRouter>
+      );
+      await flush();
+      expect(screen.getByText('Leaf')).toBeDefined();
+      // The guard sees the fold through its own level; each data loader
+      // sees the fold through ITS level — the layout's loader never
+      // observes the deeper declarations.
+      expect(seen).toEqual([
+        [
+          'audit-guard',
+          {who: api.who, theme: 'dark', role: 'admin', pane: 'audit'}
+        ],
+        ['admin-data', {who: api.who, theme: 'dark', role: 'admin'}],
+        [
+          'audit-data',
+          {who: api.who, theme: 'dark', role: 'admin', pane: 'audit'}
+        ]
+      ]);
+    });
+
+    it('should keep the exact instance context for tables that declare none', async () => {
+      const api = {who: () => 'plain'};
+      const seen: unknown[] = [];
+      const routes = createRoutes({
+        path: '',
+        children: [
+          {
+            path: '/plain',
+            data: (ctx) => {
+              seen.push(ctx.context);
+              return null;
+            },
+            component: () => Page
+          }
+        ]
+      });
+      render(
+        <MemoryRouter initialEntries={['/plain']} routes={routes} context={api}>
+          <View />
+        </MemoryRouter>
+      );
+      await flush();
+      // No declarations anywhere: the loaders see the very instance
+      // object, by reference.
+      expect(seen).toEqual([api]);
+    });
+  });
 });
 
 describe('TypedNavLink', () => {

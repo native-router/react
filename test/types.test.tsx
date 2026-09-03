@@ -948,6 +948,112 @@ describe('createRoutes params closure', () => {
   });
 });
 
+// 任务：route context 类型闭环——返回表上每层 data/beforeLoad 的
+// ctx.context 从该层自己的 context 声明推导（SearchRoutesOf 的
+// WithContext），Route<P, S, C, RC> 第四泛型给出实例+路由的合并类型。
+describe('createRoutes route context closure', () => {
+  it('should derive ctx.context of data and beforeLoad from the level declaration', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/admin',
+          context: {role: 'admin'},
+          beforeLoad: ({context}) => (context.role ? undefined : '/'),
+          data: ({context}): string => context.role
+        }
+      ]
+    });
+    void routes;
+    type AdminRoute = NonNullable<(typeof routes)['children']>[number];
+    // `const T` 保住了字面量：推导出的就是声明形状本身。
+    expectTypeOf<
+      Parameters<NonNullable<AdminRoute['data']>>[0]['context']
+    >().toEqualTypeOf<{role: 'admin'}>();
+    expectTypeOf<
+      Parameters<NonNullable<AdminRoute['beforeLoad']>>[0]['context']
+    >().toEqualTypeOf<{role: 'admin'}>();
+    // path 字面量不受影响。
+    expectTypeOf<AdminRoute['path']>().toEqualTypeOf<'/admin'>();
+  });
+
+  it('should keep undeclared levels on the loose any', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/plain',
+          // ctx.context stays the loose `any` — usable, never precise.
+          data: ({context}): number => Object.keys(context).length
+        }
+      ]
+    });
+    void routes;
+    type PlainRoute = NonNullable<(typeof routes)['children']>[number];
+    expectTypeOf<
+      Parameters<NonNullable<PlainRoute['data']>>[0]['context']
+    >().toEqualTypeOf<any>();
+  });
+
+  it('should recurse through nested children independently per level', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/section',
+          context: {section: true},
+          children: [
+            {
+              path: '/inner',
+              context: {pane: 'detail'},
+              data: ({context}): string => context.pane
+            }
+          ]
+        }
+      ]
+    });
+    void routes;
+    type Section = NonNullable<(typeof routes)['children']>[number];
+    type Inner = NonNullable<NonNullable<Section['children']>[number]>;
+    expectTypeOf<
+      Parameters<NonNullable<Inner['data']>>[0]['context']
+    >().toEqualTypeOf<{pane: 'detail'}>();
+  });
+
+  it('should reject a callback annotation that contradicts the declaration', () => {
+    createRoutes({
+      children: [
+        {
+          path: '/admin',
+          context: {role: 'admin'},
+          // @ts-expect-error {role: number} 与声明的 {role: 'admin'} 冲突
+          data: ({context}: {context: {role: number}}): number => context.role
+        }
+      ]
+    });
+  });
+
+  it('should thread the merged shape through the Route generic', () => {
+    type AppContext = {api: {list(): string[]}; tag: string};
+    // 交叉类型用 branded 比较（expect-type 对等价交叉不做严格同一判定）。
+    expectTypeOf<
+      Parameters<
+        NonNullable<Route<'/list', any, AppContext, {role: 'admin'}>['data']>
+      >[0]['context']
+    >().branded.toEqualTypeOf<AppContext & {role: 'admin'}>();
+    expectTypeOf<
+      Parameters<
+        NonNullable<
+          Route<'/list', any, AppContext, {role: 'admin'}>['beforeLoad']
+        >
+      >[0]['context']
+    >().branded.toEqualTypeOf<AppContext & {role: 'admin'}>();
+    // 不给 RC：第四泛型退化为 any，行为与旧的三泛型 Route 完全一致。
+    expectTypeOf<
+      Parameters<
+        NonNullable<Route<'/list', any, AppContext>['data']>
+      >[0]['context']
+    >().toEqualTypeOf<AppContext>();
+  });
+});
+
 // 任务：useBlocker 谓词契约（返回 `true` 放行、`false` 否决）在类型层
 // 能钉住的那一半。「返回 true = 阻止」的方向性误读无法靠类型区分
 // （true/false 同为 boolean），那半边靠 src/use-blocker.ts 的 JSDoc 与

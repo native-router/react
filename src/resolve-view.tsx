@@ -25,6 +25,34 @@ export default function resolveView(
 
 const viewDataMap = new WeakMap<ReactElement, any[]>();
 
+/**
+ * Fold the matched prefix's route contexts over the router's instance
+ * context, deeper levels winning on key conflicts — the data-loader
+ * twin of the merge core applies for `beforeLoad` guards. The base is
+ * `router.context` first, the incoming `ctx.context` only as the
+ * hand-rolled-context fallback: with core ≥ 1.15 the incoming value is
+ * already folded over the WHOLE chain, and folding a prefix back over
+ * it would leak deeper levels' keys into shallower loaders. Levels
+ * without a `context` contribute nothing, so route-context-less tables
+ * keep the exact instance value.
+ */
+function foldRouteContext(
+  base: unknown,
+  matched: Matched<Route>[],
+  end: number
+) {
+  let merged = base;
+  for (let i = 0; i <= end; i++) {
+    const routeContext = matched[i].route.context;
+    if (routeContext == null) continue;
+    merged =
+      merged == null
+        ? {...(routeContext as object)}
+        : {...(merged as object), ...(routeContext as object)};
+  }
+  return merged;
+}
+
 export function resolveViewServer(
   matched: Matched<Route>[],
   ctx: ResolveViewContext<Route>
@@ -69,10 +97,11 @@ function resolveViewBase(
         router,
         location,
         search: parseSearchInput(location.search),
-        // The router's instance context(`context` option/prop), handed
-        // to every level's loader; the fallback covers hand-rolled
-        // resolveView contexts like the one covering `signal` below.
-        context: context ?? router.context,
+        // The instance context folded with this level's prefix of route
+        // contexts (see foldRouteContext); the fallback covers
+        // hand-rolled resolveView contexts like the one covering
+        // `signal` below.
+        context: foldRouteContext(router.context ?? context, matched, index),
         // The chain's abort signal(navigation-superseded/cancelled) is
         // forwarded to every level's loader; a hand-rolled resolveView
         // context without one still yields a never-aborting signal.

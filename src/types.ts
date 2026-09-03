@@ -99,6 +99,24 @@ export type RouteParams<P extends string> = string extends P
   : ExtractPathParams<P>;
 
 /**
+ * The context a callback's `ctx.context` is typed with: the router's
+ * {@link Options.context instance context}(C, `any` by default) folded
+ * with the route context(RC, `any` when the level declares none) — the
+ * type-level twin of the runtime merge, where an absent declaration on
+ * either side contributes nothing. `any` collapses to the other side so
+ * the loose defaults keep today's `any`; two concrete shapes intersect
+ * (on a same-key conflict the runtime lets the route win — avoid
+ * re-declaring a key with a different type).
+ * @group Types
+ * @category Route
+ */
+export type MergedContext<C, RC> = 0 extends 1 & C
+  ? RC
+  : 0 extends 1 & RC
+    ? C
+    : C & RC;
+
+/**
  * Route with optional path-pattern and search generics. Give `path` a
  * string literal type and the `data`/`component`/`errorComponent`
  * contexts receive precisely-typed `params`, e.g.
@@ -109,7 +127,12 @@ export type RouteParams<P extends string> = string extends P
  * for the `data` loader and the `beforeLoad` guard alike. Give the third
  * generic your app context shape — the value of the Router's `context`
  * prop — and the callbacks' `ctx.context` is typed from it, e.g.
- * `Route<'/list', {page: number}, {api: Api}>`.
+ * `Route<'/list', {page: number}, {api: Api}>`. Give the fourth generic
+ * the route's own {@link Route.context context} shape and `ctx.context`
+ * becomes the merged instance + route context, e.g.
+ * `Route<'/list', any, AppCtx, {role: 'admin'}>` — the route context
+ * folds over the instance context level by level (see
+ * {@link MergedContext}).
  *
  * Without the search generic an untyped `ctx.search` stays `any` — the
  * default that keeps differently typed levels assignable to plain
@@ -128,12 +151,14 @@ export type RouteParams<P extends string> = string extends P
  * @group Types
  * @category Route
  */
-export type Route<P extends string = string, S = any, C = any> = Omit<
+export type Route<P extends string = string, S = any, C = any, RC = any> = Omit<
   BaseRoute<{
     name?: string;
-    data?(ctx: Context<Route, RouteParams<P>, S, C>): any | Promise<any>;
+    data?(
+      ctx: Context<Route, RouteParams<P>, S, MergedContext<C, RC>>
+    ): any | Promise<any>;
     component?(
-      ctx: Context<Route, RouteParams<P>, S, C>
+      ctx: Context<Route, RouteParams<P>, S, MergedContext<C, RC>>
     ): ComponentType | Promise<ComponentType | {default: ComponentType}>;
     /**
      * Not parametrized by `P`: props are strictly contravariant, so a
@@ -158,21 +183,33 @@ export type Route<P extends string = string, S = any, C = any> = Omit<
      */
     pendingComponent?: ComponentType;
   }>,
-  'path' | 'children' | 'beforeLoad'
+  'path' | 'children' | 'beforeLoad' | 'context'
 > & {
   /**
+   * Route-local context: a plain object merged OVER the router's
+   * instance context(`context` prop/option) for this level and every
+   * deeper level of its chain — the route wins on key conflicts, the
+   * same fold core applies for `beforeLoad` guards. Runtime behavior is
+   * core's (see `BaseRoute.context`); `RC` types the declared shape so
+   * the callbacks' `ctx.context` narrows to the merge (see
+   * {@link MergedContext}). Levels without a declaration contribute
+   * nothing — behavior is unchanged.
+   */
+  context?: RC;
+  /**
    * Route guard inherited from `BaseRoute`, re-typed by the search and
-   * context generics: `ctx.search` is `S`, `ctx.context` is `C`(both
-   * `any` by default — see the Route doc above). At runtime the search
-   * holds the level's parsed search — the schema output, or the degraded
-   * input without a schema — and the context holds the router's
-   * `context` option. The guard context types `router` as
+   * context generics: `ctx.search` is `S`, `ctx.context` is the merged
+   * instance + route context(both `any` by default — see the Route doc
+   * above). At runtime the search holds the level's parsed search — the
+   * schema output, or the degraded input without a schema — and the
+   * context holds the router's `context` option folded with the prefix's
+   * route contexts. The guard context types `router` as
    * `RouterInstance<any>`: a precise `RouterInstance<Route>` here would
    * recurse into `Route`'s own members and break `Route`'s assignability
    * to plain `BaseRoute`.
    */
   beforeLoad?(
-    ctx: GuardContext<any, S, Record<string, string>, C>
+    ctx: GuardContext<any, S, Record<string, string>, MergedContext<C, RC>>
   ): Awaitable<string | void>;
   /** Path pattern; params of the contexts above are inferred from it. */
   path?: P;
@@ -182,7 +219,7 @@ export type Route<P extends string = string, S = any, C = any> = Omit<
    * `search` field is inherited from `BaseRoute`, loosely typed — see
    * the Route doc above.
    */
-  children?: Route<any, any, any>[];
+  children?: Route<any, any, any, any>[];
 };
 
 export type LoadStatus = {
@@ -203,6 +240,34 @@ export type RouteSearchOf<R> = R extends {
 }
   ? Output
   : SearchInput;
+
+/**
+ * The route context a level declares, `unknown` when it has none.
+ * `undefined` is stripped: an optional member infers `X | undefined`
+ * while the runtime merge only ever sees the declared object. The
+ * `readonly` that `createRoutes`' `const` type parameter puts on inline
+ * object literals is stripped too(the declared object is a plain,
+ * runtime-mutable shape), so inline and variable declarations derive
+ * the same shape. Building block of {@link SearchRoutesOf}.
+ */
+type RouteContextOf<T> = T extends {context: infer RC}
+  ? NonNullable<RC> extends object
+    ? Writable<NonNullable<RC>>
+    : NonNullable<RC>
+  : unknown;
+
+/** Strip `readonly` modifiers: `-readonly` over every key. */
+type Writable<T> = {-readonly [K in keyof T]: T[K]};
+
+/**
+ * A context with only its `context` member replaced by the route-folded
+ * merge. An undeclared route context(`unknown`) passes the context
+ * through unchanged, matching the runtime where such levels contribute
+ * nothing.
+ */
+type WithContext<C, RC> = [unknown] extends [RC]
+  ? C
+  : Omit<C, 'context'> & {context: MergedContext<any, RC>};
 
 /**
  * A context with only its `search` member replaced — everything the
@@ -303,7 +368,9 @@ type Flatten<T> = {[K in keyof T]: T[K]};
  * callback written inside the literal is checked loosely against
  * `Route`(`ctx.search: any`, `ctx.params: Record<string, string>` —
  * TypeScript cannot contextually type a member from sibling
- * properties) and precisely on the returned table.
+ * properties) and precisely on the returned table. The level's
+ * {@link Route.context route context} declaration re-types the
+ * callbacks' `ctx.context` the same way(see {@link RouteContextOf}).
  * @group Types
  * @category Route
  */
@@ -329,12 +396,15 @@ export type SearchRoutesOf<
             ? undefined
             : Data extends (ctx: infer DataCtx) => infer R
               ? (
-                  ctx: WithParams<
-                    WithSearch<
-                      LooseCtxBase<Context<Route>, DataCtx>,
-                      RouteSearchOf<T>
+                  ctx: WithContext<
+                    WithParams<
+                      WithSearch<
+                        LooseCtxBase<Context<Route>, DataCtx>,
+                        RouteSearchOf<T>
+                      >,
+                      MergeParams<RawP, OwnPathParamsOf<T>>
                     >,
-                    MergeParams<RawP, OwnPathParamsOf<T>>
+                    RouteContextOf<T>
                   >
                 ) => R
               : Data;
@@ -342,17 +412,20 @@ export type SearchRoutesOf<
             ? undefined
             : BeforeLoad extends (ctx: infer GuardCtx) => infer R
               ? (
-                  ctx: WithParams<
-                    WithSearch<
-                      LooseCtxBase<
-                        GuardContext<any, any, Record<string, string>, any>,
-                        GuardCtx
+                  ctx: WithContext<
+                    WithParams<
+                      WithSearch<
+                        LooseCtxBase<
+                          GuardContext<any, any, Record<string, string>, any>,
+                          GuardCtx
+                        >,
+                        RouteSearchOf<T>
                       >,
-                      RouteSearchOf<T>
+                      [unknown] extends [ParamsSchemaOutputOf<T>]
+                        ? MergeParams<GuardP, OwnPathParamsOf<T>>
+                        : ParamsSchemaOutputOf<T>
                     >,
-                    [unknown] extends [ParamsSchemaOutputOf<T>]
-                      ? MergeParams<GuardP, OwnPathParamsOf<T>>
-                      : ParamsSchemaOutputOf<T>
+                    RouteContextOf<T>
                   >
                 ) => R
               : BeforeLoad;
