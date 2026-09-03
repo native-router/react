@@ -7,7 +7,7 @@ export {default as ScrollRestoration} from './components/ScrollRestoration';
 export {default as TypedLink} from './components/TypedLink';
 export {default as TypedNavLink} from './components/TypedNavLink';
 export {default as TypedPrefetchLink} from './components/TypedPrefetchLink';
-export {createRoutes} from './create-routes';
+export {createRoutes, createRoute} from './create-routes';
 export {
   useView,
   View,

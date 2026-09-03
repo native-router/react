@@ -51,6 +51,7 @@ import {
   TypedNavLink,
   TypedPrefetchLink,
   View,
+  createRoute,
   createRouter,
   createRoutes,
   defaultResolveView,
@@ -2457,6 +2458,96 @@ describe('useSetSearch', () => {
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }
+  });
+});
+
+describe('createRoute factory', () => {
+  const pageSearch: StandardSchemaV1<unknown, {page: number}> = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate(value) {
+        const parsed = Number((value as {page?: unknown}).page ?? 1);
+        return Number.isInteger(parsed) && parsed >= 1
+          ? {value: {page: parsed}}
+          : {
+              issues: [{message: 'expected a positive integer', path: ['page']}]
+            };
+      }
+    }
+  };
+
+  it('should build a working route with the schema as the second argument', async () => {
+    const seen: unknown[] = [];
+    const route = createRoute('/list', pageSearch, {
+      beforeLoad: ({search}) => {
+        seen.push((search as {page: number}).page);
+      },
+      data: ({search}) => `page-${(search as {page: number}).page}`,
+      component: () => Page
+    });
+    // The schema attached, the path preserved, nothing else invented.
+    expect(route.path).toBe('/list');
+    expect(route.search).toBe(pageSearch);
+    expect(route.data).toBeTypeOf('function');
+    expect(Object.keys(route).sort()).toEqual([
+      'beforeLoad',
+      'component',
+      'data',
+      'path',
+      'search'
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={['/list?page=3']} routes={[route]}>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(seen).toEqual([3]);
+    expect(screen.getByText('page-3')).toBeDefined();
+  });
+
+  it('should accept the schema inside the config in the two-argument form', async () => {
+    const route = createRoute('/list', {
+      search: pageSearch,
+      // ctx.search degrades to the loose SearchInput at write time —
+      // the runtime value is still the schema output.
+      data: ({search}) => `page-${Number((search as {page?: unknown}).page)}`,
+      component: () => Page
+    });
+    // No separate argument: the config's own `search` is the schema,
+    // and no stray `search` duplication happens.
+    expect(route.search).toBe(pageSearch);
+
+    render(
+      <MemoryRouter initialEntries={['/list?page=2']} routes={[route]}>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(screen.getByText('page-2')).toBeDefined();
+  });
+
+  it('should nest factory routes through children', async () => {
+    const leaf = createRoute('/leaf/:id', undefined, {
+      data: ({params}) => `leaf-${(params as {id: string}).id}`,
+      component: () => Page
+    });
+    const tree = createRoutes({
+      children: [
+        createRoute('/app', undefined, {
+          children: [leaf]
+        })
+      ]
+    });
+    render(
+      <MemoryRouter initialEntries={['/app/leaf/7']} routes={tree}>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(screen.getByText('leaf-7')).toBeDefined();
   });
 });
 

@@ -21,6 +21,7 @@ import {
   TypedNavLink,
   TypedPrefetchLink,
   View,
+  createRoute,
   createRouter,
   createRoutes,
   useBlocker,
@@ -1051,6 +1052,93 @@ describe('createRoutes route context closure', () => {
         NonNullable<Route<'/list', any, AppContext>['data']>
       >[0]['context']
     >().toEqualTypeOf<AppContext>();
+  });
+});
+
+// 任务：createRoute 工厂——编写时（write-time）类型安全。search schema 作为
+// 第二个参数传入时，回调在编写时就拿到类型化 ctx（TypeScript 只能从更早
+// 的参数做上下文类型推导，所以 schema 放进 config 对象无法类型化兄弟回调）。
+describe('createRoute factory typing', () => {
+  const listSearch: StandardSchemaV1<unknown, {page: number; tag?: string}> = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value) => {
+        const {page} = (value ?? {}) as {page?: unknown};
+        return {value: {page: Number(page) || 1, tag: 'x'}};
+      }
+    }
+  };
+
+  it('should type ctx.search and ctx.params at write time with the schema argument', () => {
+    createRoute('/lists/:list', listSearch, {
+      data: (ctx) => {
+        // Write-time: no annotation, typed from the EARLIER arguments.
+        expectTypeOf(ctx.search).toEqualTypeOf<{page: number; tag?: string}>();
+        expectTypeOf(ctx.params).toEqualTypeOf<{list: string}>();
+        return ctx.search.page + ctx.params.list;
+      },
+      beforeLoad: ({search}) => (search.page > 0 ? undefined : '/lists?page=1')
+    });
+  });
+
+  it('should reject write-time contradictions against the schema and the path', () => {
+    createRoute('/lists/:list', listSearch, {
+      data: (ctx) => {
+        // @ts-expect-error page 是 number，不接受 string 形状
+        const wrong: {page: string} = ctx.search;
+        // @ts-expect-error path 模式只有 list，没有 typo
+        const missing: string = ctx.params.typo;
+        return [wrong, missing];
+      }
+    });
+  });
+
+  it('should degrade ctx.search to SearchInput at write time in the two-argument form', () => {
+    createRoute('/plain/:slug', {
+      beforeLoad: ({params, search}) => {
+        expectTypeOf(params).toEqualTypeOf<Record<string, string>>();
+        expectTypeOf(search).toEqualTypeOf<SearchInput>();
+        return params.slug && search.q ? undefined : '/';
+      },
+      data: (ctx) => {
+        // data 的 params 在编写时就从 path 字面量类型化。
+        expectTypeOf(ctx.params).toEqualTypeOf<{slug: string}>();
+        return ctx.params.slug;
+      }
+    });
+  });
+
+  it('should keep the path literal and re-type the returned route precisely', () => {
+    const listRoute = createRoute('/lists/:list', listSearch, {
+      data: ({search, params}) => search.page + params.list
+    });
+    void listRoute;
+    expectTypeOf<(typeof listRoute)['path']>().toEqualTypeOf<'/lists/:list'>();
+    expectTypeOf<
+      Parameters<NonNullable<(typeof listRoute)['data']>>[0]['search']
+    >().toEqualTypeOf<{page: number; tag?: string}>();
+    expectTypeOf<
+      Parameters<NonNullable<(typeof listRoute)['data']>>[0]['params']
+    >().toEqualTypeOf<{list: string}>();
+
+    // Nests through children; the literals concatenate for TypedLink.
+    const table = createRoutes({
+      children: [
+        {
+          path: '/app',
+          children: [
+            createRoute('/lists/:list', listSearch, {
+              data: ({params}) => params.list
+            })
+          ]
+        }
+      ]
+    });
+    expectTypeOf<
+      RoutePaths<typeof table>
+    >().toEqualTypeOf<'/app/lists/:list'>();
+    void table;
   });
 });
 
