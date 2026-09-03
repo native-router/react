@@ -59,6 +59,20 @@ type Props<C = undefined> = {
    */
   notFound?: ReactNode | ComponentType;
   /**
+   * Opt in to switching the retained view to the route
+   * `pendingComponent` during slow in-app navigations, after the given
+   * milliseconds of a still-pending navigation. The default(no value)
+   * keeps today's behavior: an in-app navigation retains the previous
+   * view until the new one resolves, the global loading signal
+   * (`useLoading`) covers that phase. With the delay set, a navigation
+   * pending past the threshold renders the nearest matched
+   * `pendingComponent`(deepest first, the resolving route's own
+   * included) in place of the retained view — a fast loader resolves
+   * inside the threshold and nothing flashes. Cold starts(pending with
+   * no previous view) render the skeleton immediately, as always.
+   */
+  pendingDelayMs?: number;
+  /**
    * Opt in to document [View Transitions](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API):
    * `true` animates push navigations only — pop restores a `viewStack`
    * snapshot and animating it would only slow the back button down,
@@ -105,12 +119,14 @@ export function Router({
   router,
   children,
   viewTransition,
-  notFound
+  notFound,
+  pendingDelayMs
 }: {
   children?: ReactNode;
   router: RouterInstance<Route, ReactNode>;
   viewTransition?: ViewTransitionProp;
   notFound?: ReactNode | ComponentType;
+  pendingDelayMs?: number;
 }) {
   const viewRef = useRef<ReactNode>(getCurrentView(router));
   // Latest-prop ref: the store subscription stays stable per router, so
@@ -221,12 +237,40 @@ export function Router({
       ? resolvePendingView(router, loading.key)
       : null;
 
+  // The opt-in in-app flavor: with `pendingDelayMs` set, a navigation
+  // still pending past the threshold swaps the retained view for the
+  // resolving route's skeleton. The timer runs per pending episode
+  // (keyed by the loading key) and is torn down when the episode ends
+  // or the view slot empties(a cold start needs no switch).
+  const [delayedKey, setDelayedKey] = useState<number>();
+  const retained = view != null;
+  useEffect(() => {
+    if (pendingDelayMs == null || !retained || loading?.status !== 'pending') {
+      setDelayedKey(undefined);
+      return;
+    }
+    const {key} = loading;
+    const timer = setTimeout(() => {
+      setDelayedKey(key);
+    }, pendingDelayMs);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [loading?.key, loading?.status, retained, pendingDelayMs]);
+  const inAppPending =
+    retained &&
+    loading?.status === 'pending' &&
+    delayedKey === loading.key &&
+    pendingDelayMs != null
+      ? resolvePendingView(router, loading.key)
+      : null;
+
   return (
     <RouterContext.Provider value={router}>
       {children === undefined ? (
-        (view ?? pending)
+        (inAppPending ?? view ?? pending)
       ) : (
-        <ViewProvider value={view}>
+        <ViewProvider value={inAppPending ?? view}>
           <PendingContext.Provider value={pending}>
             {children}
           </PendingContext.Provider>
@@ -272,7 +316,14 @@ export function createRouter<C = undefined>(
 }
 
 function useNewRouter<C = undefined>(
-  {routes, children, viewTransition, notFound, ...options}: Props<C>,
+  {
+    routes,
+    children,
+    viewTransition,
+    notFound,
+    pendingDelayMs,
+    ...options
+  }: Props<C>,
   createHistory: () => History
 ) {
   const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
@@ -321,7 +372,11 @@ function useNewRouter<C = undefined>(
 
   const r = useMemo(
     () => (
-      <Router router={router} viewTransition={viewTransition}>
+      <Router
+        router={router}
+        viewTransition={viewTransition}
+        pendingDelayMs={pendingDelayMs}
+      >
         {children}
       </Router>
     ),

@@ -1772,6 +1772,110 @@ describe('route pendingComponent', () => {
     expect(screen.getByText('slow-data')).toBeDefined();
   });
 
+  it('should swap the retained view for the skeleton after pendingDelayMs of a slow in-app navigation', async () => {
+    // One deferred per navigation: the second stays pending past the
+    // threshold.
+    const gates = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const data = vi.fn(() => gates[call++].promise);
+    function ListPage() {
+      return (
+        <div>
+          <Page />
+          <Link to="/list?page=2" data-testid="next-page">
+            Next
+          </Link>
+        </div>
+      );
+    }
+    const routes: Route[] = [
+      {
+        path: '/list',
+        component: () => ListPage,
+        data,
+        pendingComponent: Skeleton
+      }
+    ];
+    render(
+      <MemoryRouter
+        initialEntries={['/list?page=1']}
+        routes={routes}
+        pendingDelayMs={20}
+      >
+        <View />
+      </MemoryRouter>
+    );
+    // Cold start renders the skeleton immediately, as always.
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+    gates[0].resolve('page-1-data');
+    await flush();
+    expect(screen.getByText('page-1-data')).toBeDefined();
+
+    // In-app navigation stays on the old view inside the threshold…
+    fireEvent.click(screen.getByTestId('next-page'));
+    await flush();
+    expect(data).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('page-1-data')).toBeDefined();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+    // …and swaps to the skeleton once the delay elapses while still
+    // pending.
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 60));
+    });
+    expect(screen.getByTestId('skeleton')).toBeDefined();
+    expect(screen.queryByText('page-1-data')).toBeNull();
+
+    gates[1].resolve('page-2-data');
+    await flush();
+    expect(screen.getByText('page-2-data')).toBeDefined();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+  });
+
+  it('should not flash the skeleton for a loader that beats pendingDelayMs', async () => {
+    // Both navigations resolve instantly — well inside the threshold.
+    const gates = [Promise.resolve('fast-1'), Promise.resolve('fast-2')];
+    let call = 0;
+    const data = vi.fn(() => gates[call++]);
+    function ListPage() {
+      return (
+        <div>
+          <Page />
+          <Link to="/list?page=2" data-testid="next-page">
+            Next
+          </Link>
+        </div>
+      );
+    }
+    const routes: Route[] = [
+      {
+        path: '/list',
+        component: () => ListPage,
+        data,
+        pendingComponent: Skeleton
+      }
+    ];
+    render(
+      <MemoryRouter
+        initialEntries={['/list?page=1']}
+        routes={routes}
+        pendingDelayMs={20}
+      >
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(screen.getByText('fast-1')).toBeDefined();
+
+    // The second navigation resolves well inside the threshold: the view
+    // swaps straight to the new data, no skeleton ever flashes.
+    fireEvent.click(screen.getByTestId('next-page'));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 60));
+    });
+    expect(screen.getByText('fast-2')).toBeDefined();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
+  });
+
   it('should keep the previous view on in-app pagination (no pending flash)', async () => {
     const gates = [deferred<string>(), deferred<string>()];
     let call = 0;
