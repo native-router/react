@@ -6,8 +6,10 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  createElement
 } from 'react';
+import type {ComponentType} from 'react';
 import {
   History,
   createBrowserHistory,
@@ -22,10 +24,11 @@ import {
   getCurrentView,
   listen,
   match,
-  setOptions
+  setOptions,
+  NotFoundError
 } from '@native-router/core';
 import type {Options, ResolveView, RouterInstance} from '@native-router/core';
-import {splitProps, uniqId} from '@native-router/core/util';
+import {reject, splitProps, uniqId} from '@native-router/core/util';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
 import defaultResolve from '@@/resolve-view';
 import {
@@ -45,6 +48,17 @@ type Props<C = undefined> = {
   routes: Route[] | Route;
   resolveView?: typeof defaultResolve;
   /**
+   * Rendered when a navigation's resolution rejects with core's
+   * `NotFoundError` — an unmatched path(to any depth of the chain), or
+   * a loader/guard that throws one for missing data. A `ReactNode` is
+   * rendered as-is; a component type is rendered with no props. It
+   * takes precedence over `errorHandler` for `NotFoundError` only —
+   * every other error keeps the existing `errorHandler` path — and the
+   * rendered node becomes the unmatched entry's committed view, so a
+   * back/forward onto the entry replays it without re-resolving.
+   */
+  notFound?: ReactNode | ComponentType;
+  /**
    * Opt in to document [View Transitions](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API):
    * `true` animates push navigations only — pop restores a `viewStack`
    * snapshot and animating it would only slow the back button down,
@@ -58,6 +72,31 @@ type Props<C = undefined> = {
   viewTransition?: ViewTransitionProp;
 } & Omit<Options<ReactNode, C>, 'onLoadingChange'>;
 
+/** The view a `notFound` declaration renders: a node as-is, a component mounted with no props. */
+function notFoundView(notFound: NonNullable<Props['notFound']>): ReactNode {
+  return typeof notFound === 'function'
+    ? createElement(notFound as ComponentType)
+    : notFound;
+}
+
+/**
+ * Wrap an error handler with the `notFound` convention: a
+ * `NotFoundError` renders the declared node instead of reaching the
+ * base handler; every other error passes through untouched. A missing
+ * base keeps the core default(rethrow).
+ */
+function composeNotFoundErrorHandler(
+  notFound: Props['notFound'],
+  base: Options<ReactNode, any>['errorHandler']
+): Options<ReactNode, any>['errorHandler'] {
+  return (e) => {
+    if (notFound != null && e instanceof NotFoundError) {
+      return notFoundView(notFound);
+    }
+    return base ? base(e) : reject(e);
+  };
+}
+
 /**
  * Base Router Component.
  * @group Components
@@ -65,11 +104,13 @@ type Props<C = undefined> = {
 export function Router({
   router,
   children,
-  viewTransition
+  viewTransition,
+  notFound
 }: {
   children?: ReactNode;
   router: RouterInstance<Route, ReactNode>;
   viewTransition?: ViewTransitionProp;
+  notFound?: ReactNode | ComponentType;
 }) {
   const viewRef = useRef<ReactNode>(getCurrentView(router));
   // Latest-prop ref: the store subscription stays stable per router, so
@@ -77,6 +118,26 @@ export function Router({
   // would cancel in-flight resolutions through listen()'s teardown.
   const viewTransitionRef = useRef(viewTransition);
   viewTransitionRef.current = viewTransition;
+  // Hand-created router instances get the notFound convention through a
+  // one-per-instance errorHandler wrap reading this ref, so toggling
+  // the prop never re-wraps. Under useNewRouter the parent's own
+  // setOptions effect replaces this wrap with its composed handler —
+  // which already handles notFound — so the wrap only matters for
+  // externally created instances. A user setOptions with their own
+  // errorHandler later simply wins.
+  const notFoundRef = useRef(notFound);
+  notFoundRef.current = notFound;
+  useEffect(() => {
+    const base = router.errorHandler ?? reject;
+    setOptions(router, {
+      errorHandler: (e) => {
+        const declared = notFoundRef.current;
+        return declared != null && e instanceof NotFoundError
+          ? notFoundView(declared)
+          : base(e);
+      }
+    });
+  }, [router]);
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       // `from` of the next notification: history swaps `location` before
@@ -211,14 +272,22 @@ export function createRouter<C = undefined>(
 }
 
 function useNewRouter<C = undefined>(
-  {routes, children, viewTransition, ...options}: Props<C>,
+  {routes, children, viewTransition, notFound, ...options}: Props<C>,
   createHistory: () => History
 ) {
   const [tracked, rest] = splitProps(options, ['baseUrl', 'currentView']);
   const {baseUrl, currentView} = tracked;
   const [loading, setLoading] = useState<LoadStatus>();
+  // The notFound convention rides the instance's errorHandler: a
+  // NotFoundError renders the declared node, everything else keeps the
+  // user's handler(or the core default). Composed here — not only in
+  // the Router component's wrap — so create-time resolutions see it too.
+  const errorHandler = composeNotFoundErrorHandler(
+    notFound,
+    options.errorHandler
+  );
   // Initial options are baked in at creation: the cold-start resolve fires
-  // from the subscribe effect(children effects run first) before the
+  // from the subscribe effect(children effects go first) before the
   // setOptions effect below runs, and the default errorHandler would let
   // listen's refresh().catch(noop) swallow a first failure, leaving the
   // view blank forever.
@@ -226,6 +295,7 @@ function useNewRouter<C = undefined>(
     () =>
       createRouter(routes, createHistory(), {
         ...options,
+        errorHandler,
         onLoadingChange(status) {
           setLoading(status && {key: uniqId(), status});
         }
@@ -236,15 +306,18 @@ function useNewRouter<C = undefined>(
   );
 
   // Options are refreshed on every commit, so `onLoadingChange` and the
-  // callback options always see the latest closure.
+  // callback options always see the latest closure. `notFound` flows
+  // through the composed errorHandler on every refresh, so toggling the
+  // prop takes effect without recreating the router.
   useEffect(() => {
     setOptions(router, {
       ...rest,
+      errorHandler: composeNotFoundErrorHandler(notFound, rest.errorHandler),
       onLoadingChange(status) {
         setLoading(status && {key: uniqId(), status});
       }
     });
-  }, [router, rest]);
+  }, [router, rest, notFound]);
 
   const r = useMemo(
     () => (

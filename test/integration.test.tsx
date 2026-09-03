@@ -21,6 +21,7 @@ import {render, screen, act, fireEvent} from '@testing-library/react';
 import React from 'react';
 import {createBrowserHistory, createMemoryHistory} from 'history';
 import {
+  NotFoundError,
   SearchError,
   commitReplace,
   create,
@@ -3016,6 +3017,136 @@ describe('Router context', () => {
       // object, by reference.
       expect(seen).toEqual([api]);
     });
+  });
+});
+
+describe('notFound', () => {
+  function NotFoundPage() {
+    return <h1 data-testid="not-found">Nothing here</h1>;
+  }
+
+  it('should render the notFound node for an unmatched cold-start URL', async () => {
+    render(
+      <MemoryRouter
+        initialEntries={['/definitely/not/matched']}
+        routes={[{path: '/', component: () => Home}]}
+        notFound={<NotFoundPage />}
+      >
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    expect(screen.getByTestId('not-found')).toBeDefined();
+    expect(screen.queryByText('Home')).toBeNull();
+  });
+
+  it('should render the notFound component for an unmatched in-app navigation and replay on back', async () => {
+    const router = createRouter(
+      [
+        {path: '/', component: () => Home},
+        {path: '/a', component: () => A}
+      ],
+      createMemoryHistory({initialEntries: ['/']})
+    );
+    render(
+      <Router router={router} notFound={NotFoundPage}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+
+    await act(async () => {
+      await navigate(router, '/missing');
+    });
+    await flush();
+    expect(screen.getByTestId('not-found')).toBeDefined();
+    // The 404 view is the entry's committed view: back replays Home
+    // with zero resolves.
+    await act(async () => {
+      go(router, -1);
+    });
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+    expect(screen.queryByTestId('not-found')).toBeNull();
+  });
+
+  it('should keep the errorHandler path for other errors, and skip it for NotFoundError', async () => {
+    const handlerErrors: Error[] = [];
+    const routes: Route[] = [
+      {path: '/', component: () => Home},
+      {
+        path: '/throw',
+        component: () => A,
+        // An async rejection rides the errorHandler channel (a
+        // synchronous throw escapes it — pre-existing behavior, out of
+        // scope here).
+        data: () => Promise.reject(new Error('data boom'))
+      }
+    ];
+    const router = createRouter(
+      routes,
+      createMemoryHistory({initialEntries: ['/']}),
+      {
+        errorHandler(e) {
+          handlerErrors.push(e);
+          return <B />;
+        }
+      }
+    );
+    render(
+      <Router router={router} notFound={<NotFoundPage />}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByText('Home')).toBeDefined();
+
+    // NotFoundError never reaches errorHandler — notFound rendered.
+    await act(async () => {
+      await navigate(router, '/missing');
+    });
+    await flush();
+    expect(screen.getByTestId('not-found')).toBeDefined();
+    expect(handlerErrors).toEqual([]);
+
+    // Any other error keeps the errorHandler contract untouched.
+    await act(async () => {
+      await navigate(router, '/throw');
+    });
+    await flush();
+    expect(handlerErrors.map((e) => e.message)).toEqual(['data boom']);
+    expect(screen.getByText('B')).toBeDefined();
+  });
+
+  it('should keep the errorHandler receiving NotFoundError without the prop', async () => {
+    const handlerErrors: Error[] = [];
+    const routes: Route[] = [{path: '/', component: () => Home}];
+    const router = createRouter(
+      routes,
+      createMemoryHistory({initialEntries: ['/']}),
+      {
+        errorHandler(e) {
+          handlerErrors.push(e);
+          return <B />;
+        }
+      }
+    );
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    await act(async () => {
+      await navigate(router, '/missing');
+    });
+    await flush();
+    // The pre-existing channel: errorHandler sees the NotFoundError and
+    // its returned view commits.
+    expect(handlerErrors.length).toBe(1);
+    expect(handlerErrors[0]).toBeInstanceOf(NotFoundError);
+    expect(screen.getByText('B')).toBeDefined();
   });
 });
 
