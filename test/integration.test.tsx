@@ -2272,6 +2272,87 @@ describe('useSetSearch', () => {
     await flush();
     expect(screen.getByTestId('page').textContent).toBe('4');
   });
+
+  it('should not surface an unhandled rejection when the replace chain fails, and still reject for await-ers', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const outcomes: string[] = [];
+
+    function GuardedPage() {
+      const setSearch = useSetSearch(pageSearch);
+      return (
+        <div>
+          <button
+            type="button"
+            data-testid="fire-and-forget"
+            // The documented idiom: no await, no catch.
+            onClick={() => setSearch({page: '3'}, {replace: true})}
+          >
+            FireAndForget
+          </button>
+          <button
+            type="button"
+            data-testid="awaited"
+            onClick={() => {
+              const done = setSearch({page: '4'}, {replace: true});
+              if (done && typeof done.then === 'function') {
+                done.then(
+                  () => outcomes.push('resolved'),
+                  (e: Error) => outcomes.push(`rejected:${e.message}`)
+                );
+              }
+            }}
+          >
+            Awaited
+          </button>
+        </div>
+      );
+    }
+
+    const history = createMemoryHistory({initialEntries: ['/list?page=2']});
+    const routes: Route[] = [
+      {
+        path: '/list',
+        component: () => GuardedPage,
+        beforeLoad: ({search}) => {
+          // The initial resolve(page 2) passes; any write away from it
+          // fails the guard, rejecting the replace chain. No route
+          // search schema here, so the guard sees the degraded input.
+          if (Number((search as {page: string}).page) !== 2) {
+            throw new Error('guard boom');
+          }
+        }
+      }
+    ];
+    const router = createRouter(routes, history);
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+
+    try {
+      fireEvent.click(screen.getByTestId('fire-and-forget'));
+      await act(async () => {
+        // A macrotask gives the rejection (and any unhandled-rejection
+        // trap) time to surface.
+        await new Promise((done) => setTimeout(done, 10));
+      });
+      expect(history.location.search).toBe('?page=2');
+      expect(unhandled).toEqual([]);
+
+      // The returned promise is the real chain: an await-er still
+      // observes the failure.
+      fireEvent.click(screen.getByTestId('awaited'));
+      await flush();
+      expect(outcomes).toEqual(['rejected:guard boom']);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
 });
 
 describe('render-phase route error boundary', () => {

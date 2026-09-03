@@ -13,6 +13,7 @@ import type {
   SearchOutputOf,
   StandardSchemaV1
 } from '@native-router/core';
+import {noop} from '@native-router/core/util';
 import {useSyncExternalStore} from 'use-sync-external-store/shim';
 import {useRouter} from './components/Router';
 import {stringifySearch} from './components/link-behavior';
@@ -46,7 +47,8 @@ type SetSearchParams = (
  * @returns [searchParams, setSearchParams] - the current search params and
  * the setter(functional updates receive the live previous params); the
  * setter returns a `Promise<void>` that resolves once the navigation
- * commits, so callers may optionally `await` it
+ * commits — safe to ignore(failures are already handled), await it when
+ * you need them
  */
 export function useSearchParams(): [URLSearchParams, SetSearchParams] {
   const router = useRouter();
@@ -101,7 +103,12 @@ export function useSearchParams(): [URLSearchParams, SetSearchParams] {
  *
  * The navigation semantics follow `useSearchParams`' setter: push by
  * default, `{replace: true}` rewrites the current entry, guards run,
- * and the returned `Promise<void>` resolves once the navigation commits.
+ * and the returned `Promise<void>` settles once the navigation commits.
+ * Fire-and-forget is the supported idiom: a rejection down the
+ * navigation chain (a throwing guard, an unmatched redirect target) is
+ * already marked handled, so `setSearch(next)` never surfaces an
+ * unhandled rejection; await the returned promise when you need to
+ * observe the failure — it still rejects, only without the noise.
  *
  * @group Hooks
  * @param schema a Standard Schema validator of the search — must
@@ -143,6 +150,20 @@ export function useSetSearch<S extends StandardSchemaV1>(
   );
 }
 
+/**
+ * Guard a navigation promise for the fire-and-forget setter idiom: the
+ * SAME promise is returned (so an `await`-ing caller still observes the
+ * real rejection — guard errors, NotFound, ...), while the attached
+ * no-op catch marks the rejection handled, so the ubiquitous
+ * `setSearch(...)` call site never surfaces an unhandled rejection —
+ * the same treatment `Link` gives its `navigate()` (see Link.tsx).
+ * Callers that must react to the failure use the returned promise.
+ */
+function guarded(done: Promise<void>): Promise<void> {
+  done.catch(noop);
+  return done;
+}
+
 function setSearch(
   router: ReturnType<typeof useRouter>,
   qs: string,
@@ -159,16 +180,21 @@ function setSearch(
     // still sit at the head of commitReplace itself.
     const reusable = reusableEntry(router, location);
     if (reusable) {
-      return commitReplace(router, reusable.task, reusable.location);
+      return guarded(commitReplace(router, reusable.task, reusable.location));
     }
     // Route guards run like any other navigation(align with the push
     // branch): the entry carries the terminal location, so a redirect
-    // replaces the current entry with its final target.
-    return resolveEntry(router, location).then((entry) =>
-      commitReplace(router, entry.task, entry.location)
+    // replaces the current entry with its final target. A guard that
+    // throws (or an unmatched target's NotFoundError) rejects this
+    // chain — guarded above, observable only through the returned
+    // promise.
+    return guarded(
+      resolveEntry(router, location).then((entry) =>
+        commitReplace(router, entry.task, entry.location)
+      )
     );
   }
-  return navigate(router, to);
+  return guarded(navigate(router, to));
 }
 
 /**
