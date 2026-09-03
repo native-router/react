@@ -76,15 +76,18 @@ function Preview({visible}: {visible: boolean}) {
 - `useSearchParams` 读写查询串：默认 push，传 `{replace: true}` 则改写当前条目；`useSetSearch(schema)` 是 `useSearch(schema)` 的写入侧孪生——写入前用同一 schema 校验，拒绝时抛 `SearchError` 且不导航，写入的是 schema 自身的输出（缺省值已补齐）；`writeSchema(schema, defaults)`（core 导出）派生写侧投影，等于缺省的键被抹去，URL 保持干净
 - 类型化 search：任意路由 `search` 字段可声明 Standard Schema 校验器（zod/valibot/arktype，无硬依赖），resolve 时解析——`data` loader 与 `beforeLoad` 守卫都拿到类型安全的 `ctx.search`，非法 search 经既有错误层失败；组件里用 `useSearch(schema?)` 读取，无 schema 时退化为原始对象
 - search 与 params 类型闭环：`createRoutes(routes)` 重写返回表的类型，每层的 `data`/`beforeLoad` `ctx.search` 从该层自己的 schema 输出推导，`ctx.params` 从匹配前缀的 path 字面量累积推导（`beforeLoad` 额外尊重前缀 `params` schema 的输出）——不再需要 `Route<P, S>` 泛型或回调注解；无参数的层保持宽松 `Record<string, string>`，显式写出的 `Route<P, S>` 泛型仍优先
+- `createRoute(path, search?, config)` 工厂：一次构建一层路由，回调在编写时就拿到类型——schema 作为第二个参数让 `ctx.search` 编写时即类型化，path 参数让 `ctx.params` 同样；两参形式把 schema 留在 config 里，返回路由同样精确重类型
 - 基于 `searchDeps` 的 search 精细失效（`Route` 字段，经 `createRoutes` 原样透传给 core）：在每层声明本层解析消费的 search 键，同路径导航若每层投影不变，直接复用当前视图快照——零守卫、零 loader、零懒加载；`useSearchParams`/`useSetSearch` 的写入（push 与 `{replace: true}`）走同一快路径，`useSetSearch(schema)` 写前仍对整体做 schema 校验
 - 类型安全的链接：`createRoutes(routes)` 校验路由表同时保留全部 `path` 字面量，`RoutePaths<typeof routes>` 提取模式联合（穿透嵌套、保留参数段），`<TypedLink<RoutePaths<...>> to params>` 把 `to` 收窄到表内、按目标模式检查 `params`——路径不存在、参数缺失/类型错误都是编译错误，点击时插值加编码是运行时兜底；`TypedNavLink`/`TypedPrefetchLink` 把同样的收窄带给激活态链接与预取链接
 - Router 上下文：Router 组件的 `context` prop（或 `createRouter` 的 `context` 选项）给每个 router 实例固化一份同步值，每个 `data` loader 与 `beforeLoad` 守卫都从 `ctx.context` 拿到——按实例注入依赖（API client、配置、i18n）而无需模块单例；不传则为 `undefined`，现有接入零改动
+- 路由级 context：路由可再声明自己的 `context` 对象，覆盖合并（同名 key 路由优先）在该层及其全部更深层级上——`beforeLoad` 看到累积到自身层级的合并，每个 `data` loader 看到累积到它自己层级的合并；`createRoutes` 返回表与 `Route<P, S, C, RC>` 第四泛型都闭环了类型，从不声明的表拿到的仍是原样的实例值
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - `viewTransition` prop 让导航接入浏览器 View Transitions API：`true` 仅对 push 导航做动画，谓词按 `{action, to, from}` 逐次判定；方向感通过过渡 `types` 交给 `:active-view-transition-type(push|pop)` CSS 消费，不支持的浏览器降级为普通导航
 - 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
 - Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据——注解可用 `RouteDataOf` 从 loader 推导，不必手写）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决——谓词是放行语义，返回 `true` 放行导航、`false` 否决导航，不是「返回 true 阻止」；组件挂载期间注册、始终以最新闭包被询问；每次否决都记录在返回值的 `blocker.state` 上，并带 `proceed()`/`reset()` 通道——`proceed()` 重试被否决的导航，仅绕过本 hook 自己的 blocker，确认框场景三行搞定）
+- Router 组件的 `notFound` prop：`NotFoundError`（未匹配路径，或守卫/loader 为缺失数据抛出）渲染声明的节点/组件作为该条目的已提交视图，不再白屏——仅对 `NotFoundError` 优先于 `errorHandler`，其他错误保持既有通道
 - 两层错误处理、两个阶段：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）——`errorComponent` 既渲染 resolve 期失败（loader/守卫/search，无 `ctx.phase`），也渲染组件子树的渲染期抛错（`ctx.phase === 'render'`，由路由级错误边界捕获，渲染崩溃不会越过路由炸到 React 根，正如浏览器对任何加载失败都有错误页）
-- 路由级 `pendingComponent` 骨架屏：仅当没有可保留的旧视图时（冷启动、刷新、错误后的重新导航）渲染，取匹配链上最近祖先的；应用内导航依旧保留旧视图，不会闪骨架屏
+- 路由级 `pendingComponent` 骨架屏：仅当没有可保留的旧视图时（冷启动、刷新、错误后的重新导航）渲染，取匹配链上最近祖先的；应用内导航依旧保留旧视图、不会闪骨架屏——除非 Router 通过 `pendingDelayMs` 选择加入：导航挂起超过该时长即把旧视图切为骨架屏
   - 应用内导航保留旧视图是浏览器原生语义的有意设计，见 core 仓库 README 的设计原则章节
 - SSR：`resolveServerView`（来自 `@native-router/react/server`）渲染视图并内联数据载荷；客户端 `hydrate` 复用载荷，零重复请求
 - Tree-Shaking 友好：`sideEffects: false`，未用到的组件与 hooks 会被摇掉
@@ -494,6 +497,24 @@ export default function Loading() {
 }
 ```
 
+未匹配路径渲染点什么，别白屏——Router 组件的 `notFound` prop（ReactNode 原样渲染，或组件类型无 props 挂载）：
+
+```tsx
+<HistoryRouter routes={routes} notFound={() => <NotFoundPage />}>
+  <View />
+</HistoryRouter>;
+```
+
+解析以 core 的 `NotFoundError` 拒绝时——未匹配路径，或守卫/loader 为缺失数据抛出——声明的节点成为该条目的已提交视图，后退/前进回到该条目会重放它。`notFound` 仅对 `NotFoundError` 优先于 `errorHandler`；其他错误保持既有 `errorHandler` 通道，不传该 prop 一切不变。
+
+应用内导航保留旧视图直到新视图就绪（视图栈设计）。慢导航想要骨架屏，用 `pendingDelayMs` 选择加入——导航挂起超过该时长，最近的 `pendingComponent` 顶替旧视图直到导航落定；阈值内就 resolve 的 loader 永远不闪：
+
+```tsx
+<HistoryRouter routes={routes} pendingDelayMs={300}>
+  <View />
+</HistoryRouter>;
+```
+
 读写查询串：
 
 ```tsx
@@ -575,9 +596,24 @@ const listRoute = {
 } as Route<'/articles', {page: number; tag?: string}>;
 ```
 
+想一次写一层？`createRoute` 让回调在编写时就拿到类型——schema 走第二个参数，TypeScript 会从更早的参数做上下文推导，`ctx.search` 无需注解、无需经由返回表绕一圈：
+
+```tsx
+import {createRoute} from '@native-router/react';
+
+const articleRoute = createRoute('/articles/:slug', listSearch, {
+  component: () => import('./ArticleList'),
+  // ctx.search: {page: number; tag?: string}，
+  // ctx.params: {slug: string}——就在这里，编写时类型化
+  data: ({search, params}) => fetchArticles(params.slug, search.tag)
+});
+```
+
+两参形式——`createRoute('/articles/:slug', {search: listSearch, ...})`——把 schema 留在 config 里：`ctx.params` 仍从 path 编写时类型化，`ctx.search` 编写时退化为宽松 `SearchInput`，返回路由同样精确重类型。编写下的回调原样保留（返回类型也在，`RouteDataOf<typeof route.data>` 照常可用），经 `children` 嵌套的字面量累积与 `createRoutes` 表完全一致（`RoutePaths`/`TypedLink` 照常闭合）。
+
 不带 schema 的 `useSearch()` 退化为 `parseSearchInput` 的原始输入对象（字符串；重复键是数组），路由上无需声明 schema。两种写法都在每次 location 变化时重渲染；schema 需同步校验。
 
-用同一 schema 写 search——`useSetSearch(schema)` 在任何导航前校验下一个值，拒绝时抛 `SearchError`（带 schema 的 issues）且不触碰 location，写入的是 schema 自身的输出，缺省值已补齐：
+用同一 schema 写 search——`useSetSearch(schema)` 在任何导航前校验下一个值，拒绝时抛 `SearchError`（带 schema 的 issues）且不触碰 location，写入的是 schema 自身的输出，缺省值已补齐。setter 的惯用法是 fire-and-forget：导航链上的失败（守卫抛错等）已被兜底，不会冒出 unhandled rejection；需要感知失败时 await 返回的 promise，它照常 reject：
 
 ```tsx
 import {useSearch, useSetSearch} from '@native-router/react';
@@ -625,6 +661,33 @@ const routerContext = {api, i18n};
 - 类型由 prop 推导进 router 实例（`router.context`）；不传则为 `undefined`——现有接入的类型与行为零改动
 - 要给 `ctx.context` 精确类型，给 `Route` 第三个泛型——`Route<'/articles', Search, typeof routerContext>`——或注解回调的 ctx；未注解的 loader 看到的是 `any`（与 `ctx.search` 的宽松默认同一处理——路由表声明在 router 之前）
 - `createRouter(routes, history, {context})`、`<Router>`、`<HistoryRouter>`、`<HashRouter>`、`<MemoryRouter>` 都可传
+
+路由还可再声明自己的 `context`——覆盖合并（同名 key 路由优先）在该层及其全部更深层级上：
+
+```tsx
+const routes = createRoutes({
+  component: () => import('./Layout'),
+  context: {theme: 'light'}, // 布局级默认值
+  children: [
+    {
+      path: '/admin',
+      context: {role: 'admin'}, // 继承 theme，追加 role
+      children: [
+        {
+          path: '/audit',
+          // 该守卫的 ctx.context：{api, i18n, theme: 'light', role: 'admin'}
+          beforeLoad: ({context}) => (context.role === 'admin' ? undefined : '/'),
+          // 每个 data loader 只看到累积到自己层级的合并——
+          // 布局的 loader 永远看不到更深层的声明
+          data: ({context}) => context.api.fetchAuditLog()
+        }
+      ]
+    }
+  ]
+});
+```
+
+不声明 `context` 的层级不贡献任何东西——从不声明路由 context 的表拿到的仍是原样的实例值。`createRoutes` 返回表上每层的 `ctx.context` 从自己的声明重类型；`Route` 泛型显式拼出合并形状——`Route<'/audit', any, AppContext, {role: 'admin'}>` 把 `ctx.context` 类型化为 `AppContext & {role: 'admin'}`。
 
 让 `Link` 目标类型安全：用 `createRoutes` 构建路由表（`satisfies` 语义的 identity 函数，保留全部 `path` 字面量），用 `RoutePaths` 提取模式联合，再把 `TypedLink` 收窄到该联合。`params` 按目标模式的参数段检查——`:name` 要 string，`*name` 要 string 数组：
 
