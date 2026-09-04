@@ -84,7 +84,7 @@ function Preview({visible}: {visible: boolean}) {
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - `viewTransition` prop on the Router components opts navigation into the browser's View Transitions API: `true` animates push navigations only, a predicate decides per navigation on `{action, to, from}`; the direction rides the transition `types` for `:active-view-transition-type(push|pop)` CSS, and unsupported browsers degrade to plain navigation
 - Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
-- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes — derive the annotation from the loader with `RouteDataOf` instead of hand-writing it), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
+- Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes — derive the annotation from the loader with `RouteDataOf` instead of hand-writing it), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useRouteDebug()` (the core's `onDebug`/`getDebugInfo` observability surface as a `useSyncExternalStore` snapshot — current location, window depth, snapshot count and the in-flight navigation chain, re-rendered on every navigation lifecycle event; purely observational), `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
 - `notFound` prop on the Router components: a `NotFoundError` (unmatched path, or a guard/loader throwing one for missing data) renders the declared node/component as the entry's committed view instead of a blank screen — precedence over `errorHandler` for `NotFoundError` only, every other error keeps the existing channel
 - Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
 - Route-level `pendingComponent` skeleton, shown only when no previous view can be retained (cold start, refresh, re-navigation after an error); the nearest matched ancestor's wins, and in-app navigation keeps the previous view instead — unless the Router opts into `pendingDelayMs`, switching the retained view to the skeleton once a navigation has been pending that long
@@ -376,6 +376,28 @@ const routes = createRoutes({
 - **The reused view is a snapshot:** it keeps the `data` and matched `ctx` of the resolve that produced it; read live search through `useSearch`/`useSearchParams` — they subscribe to history and are always current — never through the matched context. `hash`/`state` never take part either: on a fully declared chain a hash-only navigation reuses the snapshot too
 - **No View Transition, scroll reset as usual:** a reused navigation keeps the same view reference, so nothing animates; `ScrollRestoration`'s `resetOnPush` scrolls each new push entry back to the top exactly as before
 - `invalidate()` drops the snapshots and the fast path stays off until the next real resolve; POP replay, `initHistoryStack` warm-up and `refresh()` are untouched
+
+## Observability / debug events
+
+The core ships an opt-in, purely observational navigation event stream — `router.onDebug(listener)` emits `nav-start` / `nav-commit` / `nav-cancel` / `nav-supersede` / `nav-error` (with the action, the target path and timings; `nav-commit.replay` flags a POP served from the `viewStack` snapshot), and `router.getDebugInfo()` snapshots the current location, the session window depth, the held view snapshots and the in-flight chain. See the core README's [Observability / debug events](https://github.com/native-router/core#observability--debug-events) section for the full event table.
+
+`useRouteDebug()` is the React binding over that surface — a `useSyncExternalStore` snapshot re-rendered on every navigation lifecycle event, ready for a DevTool panel:
+
+```tsx
+import {useRouteDebug} from '@native-router/react';
+
+function RouteDevPanel() {
+  const {to, index, stackDepth, snapshots, resolving} = useRouteDebug();
+  return (
+    <aside aria-label="router debug">
+      <b>{to}</b> (index {index}, stack {stackDepth}, snapshots {snapshots})
+      {resolving && <span> navigating to {resolving.to}…</span>}
+    </aside>
+  );
+}
+```
+
+Mount the panel anywhere inside the Router (a nav bar beside `<View />` works); subscribing is what enables the stream, and with no consumer mounted the observation is free. For a full event timeline the raw stream is a plain effect away — `useEffect(() => router.onDebug(listener), [router])` — and the snapshot stays consistent with it because every event refreshes the cache the hook reads.
 
 ## Structural differences vs TanStack Router
 

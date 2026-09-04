@@ -36,7 +36,8 @@ import {
 import type {
   Location,
   RouterInstance,
-  StandardSchemaV1
+  StandardSchemaV1,
+  DebugInfo
 } from '@native-router/core';
 import {resetViewTransitionCapability} from '../src/view-transition';
 import type {ViewTransitionInfo} from '../src/view-transition';
@@ -60,6 +61,7 @@ import {
   useLoading,
   useNamedData,
   usePrefetch,
+  useRouteDebug,
   useSearch,
   useSearchParams,
   useSetSearch,
@@ -4449,5 +4451,110 @@ describe('View Transitions', () => {
       calls[1].update();
     });
     expect(screen.getByText('Home')).toBeDefined();
+  });
+});
+
+// 任务：useRouteDebug——core onDebug/getDebugInfo 观察面的 React 绑定。
+// 快照随导航生命周期事件重渲染：字段（to/index/stackDepth/snapshots）、
+// 在飞链（resolving）与空闲态（null）都要对得上；订阅本身即开启事件流，
+// 未挂消费方时零事件（core 侧已覆盖）。
+describe('useRouteDebug', () => {
+  it('should snapshot the router state and track it across navigations', async () => {
+    let release!: () => void;
+    const parked = new Promise<void>((done) => {
+      release = done;
+    });
+    const routes = createRoutes({
+      children: [
+        {path: '/', component: () => Home},
+        {
+          path: '/slow',
+          component: () => Page,
+          data: () => parked.then(() => 'slow-data')
+        },
+        {path: '/b', component: () => A}
+      ]
+    });
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    const infos: DebugInfo[] = [];
+    function Probe() {
+      const info = useRouteDebug();
+      infos.push(info);
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <View />
+        <Probe />
+      </Router>
+    );
+    await flush();
+
+    // The warm-up lazy re-resolve settled: idle at '/'.
+    const settled = infos.at(-1)!;
+    expect(settled.to).toBe('/');
+    expect(settled.index).toBe(0);
+    expect(settled.stackDepth).toBe(1);
+    expect(settled.snapshots).toBe(1);
+    expect(settled.resolving).toBeNull();
+
+    // A slow chain is visible in flight, with the requested target.
+    const navigating = act(() => navigate(router, '/slow'));
+    await flush();
+    const inFlight = infos.at(-1)!;
+    expect(inFlight.resolving).toMatchObject({action: 'push', to: '/slow'});
+    expect(typeof inFlight.resolving!.startedAt).toBe('number');
+
+    release();
+    await navigating;
+    await flush();
+    const committed = infos.at(-1)!;
+    expect(committed.resolving).toBeNull();
+    expect(committed.to).toBe('/slow');
+    expect(committed.index).toBe(1);
+    expect(committed.stackDepth).toBe(2);
+    expect(committed.snapshots).toBe(2);
+  });
+
+  it('should see the in-flight chain cancelled by a history POP', async () => {
+    const park = new Promise<undefined>(() => {});
+    const routes = createRoutes({
+      children: [
+        {path: '/', component: () => Home},
+        {path: '/stuck', component: () => Page, data: () => park}
+      ]
+    });
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    const infos: DebugInfo[] = [];
+    function Probe() {
+      infos.push(useRouteDebug());
+      return null;
+    }
+    render(
+      <Router router={router}>
+        <View />
+        <Probe />
+      </Router>
+    );
+    await flush();
+
+    act(() => {
+      void navigate(router, '/stuck').catch(() => undefined);
+    });
+    await flush();
+    expect(infos.at(-1)!.resolving).toMatchObject({to: '/stuck'});
+
+    // Back lands on the '/' snapshot: the chain is cancelled and the
+    // snapshot reports idle again on the replay commit.
+    act(() => {
+      go(router, -1);
+    });
+    await flush();
+    const settled = infos.at(-1)!;
+    expect(settled.resolving).toBeNull();
+    expect(settled.to).toBe('/');
+    expect(settled.index).toBe(0);
   });
 });
