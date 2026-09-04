@@ -7,9 +7,14 @@ import {
   type ReactElement,
   type Ref
 } from 'react';
-import type {AsLinkProps, TypedLinkProps} from '@@/types';
+import type {AsLinkProps, LinkProps, TypedLinkProps} from '@@/types';
 import {useRouter} from './Router';
+import PrefetchLink from './PrefetchLink';
 import {interpolatePath, appendSearch, shouldNavigate} from './link-behavior';
+
+// Internal delegation to PrefetchLink with the implementation-loose
+// `as` shape; the public generic typing lives on the signatures below.
+const LoosePrefetchLink = PrefetchLink as (props: any) => ReactElement | null;
 
 /**
  * Link whose `to` is narrowed to a route table's path patterns and whose
@@ -53,12 +58,21 @@ import {interpolatePath, appendSearch, shouldNavigate} from './link-behavior';
  * params and search optional. Click interception follows {@link Link}
  * — only plain primary-button clicks are intercepted.
  *
+ * A `prefetch` strategy prop(the {@link PrefetchLink} values:
+ * `'intent'`/`'render'`/`'viewport'`/`'none'`) upgrades the link in
+ * place: declared, the link renders through `PrefetchLink` on the
+ * interpolated target — every strategy, the `usePrefetch` preview
+ * context and PrefetchLink's click path included — while the type
+ * narrowing and the click-time missing-param backstop stay. Omitted,
+ * the link stays a plain `Link`-path anchor byte for byte.
+ *
  * An `as` component can be layered on top(`asProps`/flattened `as`-props
  * per {@link AsLinkProps}); give both type arguments to keep the pattern
  * narrowing: `<TypedLink<typeof routes, typeof MyLink> ... />`.
  * @group Components
  * @param props `to`(a pattern of the table), `params`(per the pattern),
- * `search`(the pattern's schema input) and the usual anchor attributes
+ * `search`(the pattern's schema input), `prefetch`(optional strategy)
+ * and the usual anchor attributes
  */
 // The implementation works on the loose shape; the typed signature is
 // attached below so discriminated-union props need not be destructured
@@ -69,6 +83,7 @@ function TypedLinkImpl(
     params,
     search,
     onClick,
+    prefetch,
     as,
     asProps,
     ...rest
@@ -76,9 +91,10 @@ function TypedLinkImpl(
     to: string;
     params?: Record<string, string | string[]>;
     search?: Record<string, unknown>;
+    prefetch?: LinkProps['prefetch'];
     as?: ElementType;
     asProps?: Record<string, unknown>;
-  } & Omit<TypedLinkProps, 'to' | 'params' | 'search' | 'prefetch' | 'href'>,
+  } & Omit<TypedLinkProps, 'to' | 'params' | 'search' | 'href'>,
   ref: Ref<HTMLAnchorElement>
 ) {
   const router = useRouter();
@@ -88,10 +104,34 @@ function TypedLinkImpl(
   // missing the raw pattern stays and the click-time check below blocks
   // the navigation.
   let href: string = to;
+  let missing = false;
   try {
     href = interpolatePath(to, params ?? {});
   } catch {
     // Programming error the types already flag; surfaced on click.
+    missing = true;
+  }
+
+  // A declared prefetch strategy upgrades the link to a prefetching
+  // one: everything from here on is `PrefetchLink`'s — strategies,
+  // preview context, click path — on the same interpolated target.
+  // The missing-param backstop keeps TypedLink's contract: the wrapped
+  // onClick re-throws it before PrefetchLink commits anything.
+  if (prefetch !== undefined) {
+    return (
+      <LoosePrefetchLink
+        to={appendSearch(href, search)}
+        prefetch={prefetch}
+        as={as}
+        asProps={asProps}
+        {...rest}
+        ref={ref}
+        onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+          onClick?.(e);
+          if (missing && !e.defaultPrevented) interpolatePath(to, params ?? {});
+        }}
+      />
+    );
   }
 
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {

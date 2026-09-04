@@ -148,6 +148,17 @@ describe('TypedLink', () => {
       params={{rest: 'a'}}
     />;
   });
+
+  it('should accept a prefetch strategy with the pattern checks kept', () => {
+    <TypedLink<Paths> to="/" prefetch="render" />;
+    <TypedLink<Paths> to="/users/:id" params={{id: '7'}} prefetch="viewport" />;
+    // @ts-expect-error params are still required for '/users/:id'
+    <TypedLink<Paths> to="/users/:id" prefetch="intent" />;
+    // @ts-expect-error the strategy union still applies
+    <TypedLink<Paths> to="/" prefetch="nope" />;
+    // @ts-expect-error a path outside the table is still rejected
+    <TypedLink<Paths> to="/help" prefetch="render" />;
+  });
 });
 
 // A design-system-style link: own props + anchor attributes rest-spread,
@@ -376,6 +387,25 @@ describe('TypedNavLink', () => {
     >
       {({isActive}) => (isActive ? 'Home*' : 'Home')}
     </TypedNavLink>;
+  });
+
+  it('should accept a prefetch strategy with the pattern checks kept', () => {
+    <TypedNavLink<Paths> to="/" end prefetch="render" />;
+    <TypedNavLink<Paths> to="/users/:id" params={{id: '7'}} prefetch="viewport">
+      User 7
+    </TypedNavLink>;
+    // The active-state callbacks keep typing through the prefetch flavor.
+    <TypedNavLink<Paths>
+      to="/"
+      prefetch="intent"
+      className={({isActive}) => (isActive ? 'on' : 'off')}
+    >
+      {({isActive}) => (isActive ? 'Home*' : 'Home')}
+    </TypedNavLink>;
+    // @ts-expect-error params are still required for '/users/:id'
+    <TypedNavLink<Paths> to="/users/:id" prefetch="render" />;
+    // @ts-expect-error the strategy union still applies
+    <TypedNavLink<Paths> to="/" prefetch="nope" />;
   });
 });
 

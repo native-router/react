@@ -3601,6 +3601,183 @@ describe('TypedPrefetchLink', () => {
   });
 });
 
+// 任务：TypedLink/TypedNavLink 的 prefetch 透传——声明 prefetch 策略时
+// 链接按 PrefetchLink 渲染（策略、usePrefetch 预览上下文、点击提交全部
+// 继承），目标仍是插值后的带参路径；未声明时保持原 Link/NavLink 路径
+// （其余 describe 已覆盖）。类型层判别见 test/types.test.tsx。
+describe('TypedLink/TypedNavLink prefetch passthrough', () => {
+  const routes = createRoutes({
+    children: [
+      {path: '/', component: () => Home},
+      {path: '/users/:id', component: () => Page, data: () => 'user-data'}
+    ]
+  });
+  type Paths = RoutePaths<typeof routes>;
+
+  it('should prefetch and commit the interpolated target when TypedLink declares a strategy', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <View />
+        <TypedLink<Paths>
+          to="/users/:id"
+          params={{id: '7'}}
+          prefetch="intent"
+          data-testid="target"
+        >
+          <PrefetchStatus />
+        </TypedLink>
+      </Router>
+    );
+    await flush();
+    const el = screen.getByTestId('target') as HTMLAnchorElement;
+    // The href keeps showing the interpolated target.
+    expect(el.getAttribute('href')).toBe('/users/7');
+    // 'intent' waits for hover/focus — nothing prefetched yet.
+    expect(screen.getByText('idle')).toBeDefined();
+
+    await act(async () => {
+      fireEvent.mouseEnter(el);
+    });
+    await flush();
+    // The prefetch context is live on the typed link: the prefetched
+    // view resolved the interpolated target.
+    expect(screen.getByText('view')).toBeDefined();
+
+    fireEvent.click(el);
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(history.location.pathname).toBe('/users/7');
+  });
+
+  it('should not preload on hover with prefetch="none" but still navigate on click', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <View />
+        <TypedLink<Paths>
+          to="/users/:id"
+          params={{id: '7'}}
+          prefetch="none"
+          data-testid="target"
+        >
+          <PrefetchStatus />
+        </TypedLink>
+      </Router>
+    );
+    await flush();
+    const el = screen.getByTestId('target');
+    expect(screen.getByText('idle')).toBeDefined();
+    await act(async () => {
+      fireEvent.mouseEnter(el);
+    });
+    await flush();
+    // Hover never triggers a 'none' link.
+    expect(screen.getByText('idle')).toBeDefined();
+
+    fireEvent.click(el);
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(history.location.pathname).toBe('/users/7');
+  });
+
+  it('should keep the missing-param backstop in the prefetch flavor', async () => {
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    const BadLink = TypedLink as unknown as (props: {
+      to: string;
+      params?: Record<string, string>;
+      prefetch?: 'intent' | 'render' | 'viewport' | 'none';
+      'data-testid'?: string;
+      children?: React.ReactNode;
+    }) => React.ReactElement;
+    render(
+      <MemoryRouter routes={routes}>
+        <BadLink
+          to="/users/:id"
+          params={{}}
+          prefetch="render"
+          data-testid="bad-prefetch"
+        >
+          <PrefetchStatus />
+        </BadLink>
+        <View />
+      </MemoryRouter>
+    );
+    await flush();
+    // 'render' prefetched the raw pattern — which even resolves (the
+    // literal ':id' segment satisfies the param matcher); the click-time
+    // check below is what keeps the programming error from navigating.
+    expect(screen.getByTestId('status').textContent).toBe('view');
+
+    const handlerErrors: Error[] = [];
+    const onWindowError = (e: ErrorEvent) => handlerErrors.push(e.error);
+    window.addEventListener('error', onWindowError);
+    try {
+      fireEvent.click(screen.getByTestId('bad-prefetch'));
+    } finally {
+      window.removeEventListener('error', onWindowError);
+    }
+    // TypedLink's click-time params check fires before PrefetchLink's
+    // own commit path, exactly like the plain flavor.
+    expect(handlerErrors[0]?.message).toMatch(/Missing param "id"/);
+    expect(screen.queryByText('Page')).toBeNull();
+    consoleError.mockRestore();
+  });
+
+  it('should keep the active state while prefetching through TypedNavLink', async () => {
+    const history = createMemoryHistory({initialEntries: ['/']});
+    const router = createRouter(routes as Route, history);
+    render(
+      <Router router={router}>
+        <nav>
+          <TypedNavLink<Paths> to="/" end data-testid="home">
+            Home
+          </TypedNavLink>
+          <TypedNavLink<Paths>
+            to="/users/:id"
+            params={{id: '7'}}
+            prefetch="intent"
+            data-testid="user"
+            className={({isActive}) => (isActive ? 'on' : 'off')}
+          >
+            <PrefetchStatus />
+          </TypedNavLink>
+        </nav>
+        <View />
+      </Router>
+    );
+    await flush();
+    const el = screen.getByTestId('user') as HTMLAnchorElement;
+    expect(el.getAttribute('href')).toBe('/users/7');
+    // The active state computes exactly like the plain flavor.
+    expect(el.className).toBe('off');
+    expect(screen.getByTestId('home').getAttribute('aria-current')).toBe(
+      'page'
+    );
+
+    await act(async () => {
+      fireEvent.mouseEnter(el);
+    });
+    await flush();
+    expect(screen.getByText('view')).toBeDefined();
+
+    fireEvent.click(el);
+    await flush();
+    expect(screen.getByText('Page')).toBeDefined();
+    expect(history.location.pathname).toBe('/users/7');
+    await flush();
+    // Post-commit, the callbacks and aria-current follow the new
+    // location — still on the interpolated target.
+    expect(el.className).toBe('on');
+    expect(el.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByTestId('home').getAttribute('aria-current')).toBe(null);
+  });
+});
+
 // 任务：TypedLink 家族 search prop——运行时把 search 对象序列化进目标
 // （值 String()-化、数组重复键、undefined/null 丢弃），href 预览、预取与
 // 点击导航消费同一目标；路由 schema 在 resolve 时像手写 URL 一样校验

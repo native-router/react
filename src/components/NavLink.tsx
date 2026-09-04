@@ -21,6 +21,48 @@ type NavLinkImplProps = NavLinkProps & {
 const LooseLink = Link as (props: any) => ReactElement | null;
 
 /**
+ * The active-state computation shared by {@link NavLink} and
+ * `TypedNavLink`'s prefetch flavor. Subscribes to the history location
+ * so the state stays in sync even when rendered outside the routed
+ * view(e.g. a nav bar beside `<View />`). Internal — not exported from
+ * the package barrel.
+ */
+export function useActiveState(
+  router: ReturnType<typeof useRouter>,
+  to: string,
+  end: boolean,
+  caseSensitive: boolean
+): NavLinkState {
+  // Subscribe to the history location so the active state stays in sync even
+  // when rendered outside the routed view(e.g. a nav bar beside <View />).
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => router.history.listen(() => onStoreChange()),
+    [router]
+  );
+  const getSnapshot = useCallback(
+    () => router.history.location.pathname,
+    [router]
+  );
+  const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  const target = toLocation(router, to).pathname;
+  const [currentPath, targetPath] = caseSensitive
+    ? [current, target]
+    : [current.toLowerCase(), target.toLowerCase()];
+
+  const isExactActive = currentPath === targetPath;
+  // A root `to="/"` normalizes to the "/" prefix and matches every path.
+  const isActive =
+    end || isExactActive
+      ? isExactActive
+      : currentPath.startsWith(
+          targetPath.endsWith('/') ? targetPath : `${targetPath}/`
+        );
+
+  return {isActive, isExactActive};
+}
+
+/**
  * Link that knows whether its target matches the current location.
  *
  * Active rules(aligned with react-router's `NavLink`):
@@ -61,33 +103,7 @@ function NavLinkImpl(
   ref: Ref<HTMLAnchorElement>
 ) {
   const router = useRouter();
-  // Subscribe to the history location so the active state stays in sync even
-  // when rendered outside the routed view(e.g. a nav bar beside <View />).
-  const subscribe = useCallback(
-    (onStoreChange: () => void) => router.history.listen(() => onStoreChange()),
-    [router]
-  );
-  const getSnapshot = useCallback(
-    () => router.history.location.pathname,
-    [router]
-  );
-  const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-
-  const target = toLocation(router, to).pathname;
-  const [currentPath, targetPath] = caseSensitive
-    ? [current, target]
-    : [current.toLowerCase(), target.toLowerCase()];
-
-  const isExactActive = currentPath === targetPath;
-  // A root `to="/"` normalizes to the "/" prefix and matches every path.
-  const isActive =
-    end || isExactActive
-      ? isExactActive
-      : currentPath.startsWith(
-          targetPath.endsWith('/') ? targetPath : `${targetPath}/`
-        );
-
-  const state: NavLinkState = {isActive, isExactActive};
+  const state = useActiveState(router, to, end, caseSensitive);
 
   return (
     <LooseLink
@@ -98,7 +114,7 @@ function NavLinkImpl(
       ref={ref}
       className={typeof className === 'function' ? className(state) : className}
       style={typeof style === 'function' ? style(state) : style}
-      aria-current={isActive ? (ariaCurrent ?? 'page') : undefined}
+      aria-current={state.isActive ? (ariaCurrent ?? 'page') : undefined}
     >
       {typeof children === 'function' ? children(state) : children}
     </LooseLink>

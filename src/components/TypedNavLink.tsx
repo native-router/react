@@ -1,4 +1,10 @@
-import type {AsLinkProps, TypedNavLinkProps} from '@@/types';
+import type {
+  AsLinkProps,
+  LinkProps,
+  NavLinkProps,
+  NavLinkState,
+  TypedNavLinkProps
+} from '@@/types';
 import {
   forwardRef,
   type ElementType,
@@ -7,12 +13,51 @@ import {
   type Ref
 } from 'react';
 import {appendSearch, interpolatePath} from './link-behavior';
-import NavLink from './NavLink';
+import NavLink, {useActiveState} from './NavLink';
+import PrefetchLink from './PrefetchLink';
+import {useRouter} from './Router';
 
-// Internal delegation to NavLink with the implementation-loose `as`
-// shape; the public generic typing lives on the signatures below (the
-// same pattern TypedLink uses for its discriminated union).
+// Internal delegation to NavLink/PrefetchLink with the
+// implementation-loose `as` shape; the public generic typing lives on
+// the signatures below (the same pattern TypedLink uses for its
+// discriminated union).
 const LooseNavLink = NavLink as (props: any) => ReactElement | null;
+const LoosePrefetchLink = PrefetchLink as (props: any) => ReactElement | null;
+
+/**
+ * The prefetch flavor of `TypedNavLink`: NavLink's active-state
+ * resolution rendered through `PrefetchLink`. Internal — the public
+ * surface is `TypedNavLink`'s `prefetch` prop.
+ */
+const ActivePrefetchLink = forwardRef(function ActivePrefetchLink(
+  {
+    to,
+    end = false,
+    caseSensitive = false,
+    className,
+    style,
+    ariaCurrent,
+    children,
+    ...rest
+  }: NavLinkProps & {prefetch?: LinkProps['prefetch']},
+  ref: Ref<HTMLAnchorElement>
+) {
+  const router = useRouter();
+  const state: NavLinkState = useActiveState(router, to, end, caseSensitive);
+
+  return (
+    <LoosePrefetchLink
+      to={to}
+      {...rest}
+      ref={ref}
+      className={typeof className === 'function' ? className(state) : className}
+      style={typeof style === 'function' ? style(state) : style}
+      aria-current={state.isActive ? (ariaCurrent ?? 'page') : undefined}
+    >
+      {typeof children === 'function' ? children(state) : children}
+    </LoosePrefetchLink>
+  );
+});
 
 /**
  * {@link NavLink} whose `to` is narrowed to a route table's path
@@ -46,6 +91,14 @@ const LooseNavLink = NavLink as (props: any) => ReactElement | null;
  * throws instead of navigating — the runtime backstop of the type-level
  * check, unless the `onClick` handler already called `preventDefault`.
  *
+ * A `prefetch` strategy prop(the {@link PrefetchLink} values:
+ * `'intent'`/`'render'`/`'viewport'`/`'none'`) upgrades the link in
+ * place: declared, the active state keeps computing exactly as above
+ * but the link renders through `PrefetchLink` on the interpolated
+ * target — every strategy, the `usePrefetch` preview context and
+ * PrefetchLink's click path included. Omitted, the link stays a plain
+ * `NavLink` byte for byte.
+ *
  * The paths-union flavor — `TypedNavLink<RoutePaths<typeof routes>>` —
  * keeps working with `to`/`params` checked and `search` loose(see
  * {@link TypedLink}).
@@ -69,11 +122,13 @@ function TypedNavLinkImpl(
     params,
     search,
     onClick,
+    prefetch,
     ...rest
   }: {
     to: string;
     params?: Record<string, string | string[]>;
     search?: Record<string, unknown>;
+    prefetch?: LinkProps['prefetch'];
   } & Omit<TypedNavLinkProps, 'to' | 'params' | 'search' | 'href'>,
   ref: Ref<HTMLAnchorElement>
 ) {
@@ -98,6 +153,21 @@ function TypedNavLinkImpl(
       // out of the click handler, before NavLink's Link navigates.
       interpolatePath(to, params ?? {});
     }
+  }
+
+  // A declared prefetch strategy keeps the whole NavLink capability
+  // set(end/caseSensitive, the active-state callbacks, ariaCurrent)
+  // but renders through PrefetchLink on the interpolated target.
+  if (prefetch !== undefined) {
+    return (
+      <ActivePrefetchLink
+        to={appendSearch(target, search)}
+        prefetch={prefetch}
+        onClick={handleClick}
+        {...rest}
+        ref={ref}
+      />
+    );
   }
 
   return (

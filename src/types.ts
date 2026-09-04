@@ -656,6 +656,11 @@ type PrefixedLinkMembers<P extends string, Members> = Members extends {
  * flavor keeps working too: `TypedLink<RoutePaths<typeof routes>>`
  * checks `to`/`params` as before, with `search` loose
  * ({@link SearchInput}) since a bare path string carries no schema.
+ *
+ * An optional `prefetch` strategy({@link LinkProps.prefetch}, the same
+ * values `PrefetchLink` takes) upgrades the link to a prefetching one —
+ * declared, the link renders through `PrefetchLink` on the interpolated
+ * target; omitted, it stays a plain `Link` byte for byte.
  * @group Types
  * @category Link
  */
@@ -663,7 +668,7 @@ export type TypedLinkProps<PathsOrRoutes = string> =
   (PathsOrRoutes extends string
     ? {[P in PathsOrRoutes]: TypedLinkMember<P, SearchInput>}[PathsOrRoutes]
     : TypedLinkMembersOf<PathsOrRoutes>) &
-    Omit<LinkProps, 'to' | 'prefetch' | 'href'>;
+    Omit<LinkProps, 'to' | 'href'>;
 
 /**
  * Props of {@link TypedNavLink}: the {@link TypedLinkProps} discriminated
@@ -675,6 +680,12 @@ export type TypedLinkProps<PathsOrRoutes = string> =
  * Give the component the table as its type argument:
  * `TypedNavLink<typeof routes>`(or the paths-union flavor, see
  * {@link TypedLinkProps}).
+ *
+ * An optional `prefetch` strategy({@link LinkProps.prefetch}, the same
+ * values `PrefetchLink` takes) upgrades the link to a prefetching one —
+ * declared, the link renders through `PrefetchLink` on the interpolated
+ * target with the active state kept; omitted, it stays a plain
+ * `NavLink` byte for byte.
  * @group Types
  * @category Link
  */
@@ -682,7 +693,8 @@ export type TypedNavLinkProps<PathsOrRoutes = string> =
   (PathsOrRoutes extends string
     ? {[P in PathsOrRoutes]: TypedLinkMember<P, SearchInput>}[PathsOrRoutes]
     : TypedLinkMembersOf<PathsOrRoutes>) &
-    Omit<NavLinkProps, 'to' | 'href'>;
+    Omit<NavLinkProps, 'to' | 'href'> &
+    Pick<LinkProps, 'prefetch'>;
 
 /**
  * Props of {@link TypedPrefetchLink}: the same discriminated union as
