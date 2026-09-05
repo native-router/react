@@ -354,11 +354,12 @@ type Flatten<T> = {[K in keyof T]: T[K]};
  * runtime's accumulation: `data` loaders see the raw string params of
  * the matched prefix(`mergeMatchedParams`), `beforeLoad` guards see
  * them upgraded by any prefix level's {@link Route.params params
- * schema}(the deepest schema output seen replaces the map, deeper raw
- * segments spread over it). A level without params in its pattern — or
- * a whole table of widened paths — keeps the loose `Record<string,
- * string>` it always had: precision is progressive, never a breaking
- * re-type.
+ * schema}(the deepest schema output seen replaces the map; a deeper
+ * same-name segment re-declaring the same raw value keeps the coerced
+ * one, a different raw value or a deeper schema re-binds it). A level
+ * without params in its pattern — or a whole table of widened paths —
+ * keeps the loose `Record<string, string>` it always had: precision is
+ * progressive, never a breaking re-type.
  *
  * Everything else passes through unchanged: `path` literals(so
  * `RoutePaths<typeof routes>` and `TypedLink` keep working), the
