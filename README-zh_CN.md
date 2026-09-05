@@ -372,7 +372,7 @@ const routes = createRoutes({
 
 - **快路径**：导航目标为同 pathname、匹配链上**每层都声明了 `searchDeps`**、每层投影在当前条目与目标之间不变 → 当前视图快照直接作为新条目提交：零守卫、零 loader、零懒加载，与 POP 命中视图栈是同一条路径。`navigate()` 与 `useSearchParams`/`useSetSearch` 的两个写入分支（push 与 `{replace: true}`）都走它——判定即 core 的 `reusableEntry`
 - **链上覆盖是全有或全无**：任一层未声明 → 每次导航整链重解析——本特性之前的行为，逐字节一致。所以布局层也要声明 `[]`：漏一层，整链退回每次 search 变化都重解析
-- **schema 与守卫消费的键也算消费**：快路径不跑 schema、不跑 `beforeLoad`。`search` schema 严格校验的键应列进 `searchDeps`（否则这些键的非法值会免校验落进 URL）；守卫读取的 search 键不声明，键变化时守卫就不会重跑。`useSetSearch(schema)` 无论声明了哪些键，写前仍对整体做 schema 校验
+- **schema 与守卫消费的键也算消费**：快路径不跑 `beforeLoad`，守卫读取的 search 键不声明，键变化时守卫就不会重跑。但 `search` schema 本身不会被跳过：复用快照前目标的原始 search 会过匹配链上每层的 schema，被拒即放弃快路径，`SearchError` 经既有错误层（路由 `errorComponent`，否则全局 `errorHandler`）呈现，非法值不会免校验落进 URL——与手写非法 URL 的失败完全一致。`useSetSearch(schema)` 无论声明了哪些键，写前仍对整体做 schema 校验
 - **复用的视图是快照**：保留产生该视图那次 resolve 的 `data` 与 matched `ctx`；活 search 用 `useSearch`/`useSearchParams` 读——它们订阅 history、恒最新——不要从 matched 上下文读。`hash`/`state` 同样永不参与比较：全声明链上纯 hash 导航也复用快照
 - **无 View Transition、滚动照常**：复用导航的视图引用未变，不会触发动画；`ScrollRestoration` 的 `resetOnPush` 照常把新 push 条目滚回顶部
 - `invalidate()` 清掉快照后快路径失效直到下一次真实 resolve；POP 回放、`initHistoryStack` 预热与 `refresh()` 不受影响
@@ -391,7 +391,7 @@ TanStack Router 没有对应物：后退就是一次普通导航——路由重�
 
 ### `searchDeps`：一次什么也不跑的 search 变化
 
-同路径的 search 变化，若**匹配链上每层都声明了 `searchDeps`** 且所有声明的投影都没变，当前视图快照直接重新提交——零守卫、零 loader、零懒加载，与 POP 走的是同一条路径。链上覆盖是全有或全无：任一层未声明即恢复此前「每次导航都重解析」的行为，逐字节一致。上一节的接线规则原样适用：`search` schema 严格校验的键必须声明（快路径不跑 schema），`useSetSearch(schema)` 导航前仍对整体做校验。
+同路径的 search 变化，若**匹配链上每层都声明了 `searchDeps`** 且所有声明的投影都没变，当前视图快照直接重新提交——零守卫、零 loader、零懒加载，与 POP 走的是同一条路径。链上覆盖是全有或全无：任一层未声明即恢复此前「每次导航都重解析」的行为，逐字节一致。上一节的接线规则原样适用：守卫读取的 search 键必须声明，否则键变化时守卫不会重跑（`search` schema 不会被跳过——复用快照前目标会先过校验）；`useSetSearch(schema)` 导航前仍对整体做校验。
 
 TanStack 最接近的旋钮是 `loaderDeps`，方向恰好相反：`loaderDeps` 是缓存*键*——deps 变了该路由就 reload，没变时默认的过期策略仍会在后台 revalidate；`beforeLoad` 两种情况都照跑。不存在哪种配置能让一次 search 变化真的什么也不跑。
 
