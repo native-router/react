@@ -935,6 +935,20 @@ describe('createRoutes params closure', () => {
     >().toEqualTypeOf<{slug: string}>();
   });
 
+  it('should type the Route generic guard params from the path pattern', () => {
+    // Route<P> 手动泛型：beforeLoad 的 ctx.params 从 path 字面量取型，
+    // 与 data loader 同源（此前守卫硬编码宽松 Record）。
+    expectTypeOf<
+      Parameters<NonNullable<Route<'/users/:id'>['beforeLoad']>>[0]['params']
+    >().toEqualTypeOf<{id: string}>();
+    // 默认 P = string：守卫 params 保持宽松（渐进精确，plain Route 不动）。
+    expectTypeOf<
+      Parameters<NonNullable<Route['beforeLoad']>>[0]['params']
+    >().toEqualTypeOf<Record<string, string>>();
+    // 父子累积不归手动泛型管——那是 createRoutes 表（上文）的职责，
+    // Route<P> 只看自己一层的模式。
+  });
+
   it('should keep param-less levels on the loose Record shape', () => {
     const routes = createRoutes({
       children: [
@@ -976,6 +990,63 @@ describe('createRoutes params closure', () => {
       children: [{path: '/article/:title', data: articleLoader}]
     });
     void routes;
+  });
+});
+
+// 任务：beforeLoad 返回联合拓宽——core 的 RedirectTarget 进入 react 的
+// Route 类型：守卫可返回目标对象（{path, replace: true} 让导航替换当前
+// 条目而非压栈，登录守卫模式；多级守卫重定向时最后一跳生效）、纯字符串
+// （照旧压栈）或 undefined（放行）；Route 字面量 / createRoutes 表 /
+// createRoute 工厂三种写法一致接受，缺 path 或 replace 非 boolean 在
+// 类型层被拒。
+describe('Route beforeLoad redirect returns', () => {
+  it('should accept string, target and undefined returns across the writing forms', () => {
+    const routes = createRoutes({
+      children: [
+        {
+          path: '/secret/:id',
+          beforeLoad: ({params}) =>
+            params.id ? {path: '/login', replace: true} : undefined
+        },
+        {path: '/legacy', beforeLoad: () => '/x'},
+        {path: '/noop', beforeLoad: () => undefined}
+      ]
+    });
+    void routes;
+
+    // Route 注解对象（painless requireLogin 手写层）：三态同一联合。
+    const manual: Route<'/secret/:id'> = {
+      path: '/secret/:id',
+      beforeLoad: ({params}) =>
+        params.id === '1'
+          ? {path: '/login', replace: true}
+          : params.id === '2'
+            ? '/x'
+            : undefined
+    };
+    void manual;
+
+    // createRoute 两参形式：编写时上下文同样来自 Route<P, SearchInput>。
+    createRoute('/gate/:section', {
+      beforeLoad: ({params}) =>
+        params.section === 'admin'
+          ? {path: '/login', replace: true}
+          : params.section === 'guest'
+            ? '/x'
+            : undefined
+    });
+  });
+
+  it('should reject malformed redirect targets', () => {
+    // @ts-expect-error 缺 path 的对象不在返回联合里
+    const noPath: Route['beforeLoad'] = () => ({replace: true});
+    // @ts-expect-error replace 是 boolean，不接受字符串
+    const badReplace: Route['beforeLoad'] = () => ({
+      path: '/x',
+      replace: 'yes'
+    });
+    void noPath;
+    void badReplace;
   });
 });
 
@@ -1127,7 +1198,9 @@ describe('createRoute factory typing', () => {
   it('should degrade ctx.search to SearchInput at write time in the two-argument form', () => {
     createRoute('/plain/:slug', {
       beforeLoad: ({params, search}) => {
-        expectTypeOf(params).toEqualTypeOf<Record<string, string>>();
+        // 守卫 params 与 data 同源：从 path 字面量类型化（Route<P> 的
+        // GuardContext 第三泛型线程 P）；search 才退化。
+        expectTypeOf(params).toEqualTypeOf<{slug: string}>();
         expectTypeOf(search).toEqualTypeOf<SearchInput>();
         return params.slug && search.q ? undefined : '/';
       },

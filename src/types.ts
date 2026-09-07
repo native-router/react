@@ -15,6 +15,7 @@ import type {
   GuardContext,
   Matched,
   Location,
+  RedirectTarget,
   RouterInstance,
   SearchInput,
   StandardSchemaV1 as CoreStandardSchemaV1
@@ -118,9 +119,13 @@ export type MergedContext<C, RC> = 0 extends 1 & C
 
 /**
  * Route with optional path-pattern and search generics. Give `path` a
- * string literal type and the `data`/`component`/`errorComponent`
- * contexts receive precisely-typed `params`, e.g.
- * `Route<'/users/:id'>` → `params: {id: string}`. Give the second
+ * string literal type and the `data`/`component` contexts and the
+ * `beforeLoad` guard receive precisely-typed `params`, e.g.
+ * `Route<'/users/:id'>` → `params: {id: string}` — the guard's
+ * `ctx.params` is typed from the pattern like the loader's(a sibling
+ * `params` schema's coerced output closes only on the
+ * {@link createRoutes} table, see {@link SearchRoutesOf}; the manual
+ * generic keeps path params strings). Give the second
  * generic the output type of the route `search` schema and `ctx.search`
  * is typed accordingly, e.g. `Route<'/list', {page: number}>` with
  * `search: z.object({page: z.coerce.number()})` → `search: {page: number}` —
@@ -197,20 +202,32 @@ export type Route<P extends string = string, S = any, C = any, RC = any> = Omit<
    */
   context?: RC;
   /**
-   * Route guard inherited from `BaseRoute`, re-typed by the search and
-   * context generics: `ctx.search` is `S`, `ctx.context` is the merged
-   * instance + route context(both `any` by default — see the Route doc
-   * above). At runtime the search holds the level's parsed search — the
-   * schema output, or the degraded input without a schema — and the
-   * context holds the router's `context` option folded with the prefix's
-   * route contexts. The guard context types `router` as
+   * Route guard inherited from `BaseRoute`, re-typed by the path, search
+   * and context generics: `ctx.params` is `RouteParams<P>` — typed from
+   * the path pattern exactly like the loader's(`Route<'/users/:id'>` →
+   * `{id: string}`; the default `string` degrades to the loose
+   * `Record<string, string>`, so plain Routes are untouched) — `ctx.search`
+   * is `S`, `ctx.context` is the merged instance + route context(both
+   * `any` by default — see the Route doc above). A sibling `params`
+   * schema's coerced output reaches the guard only through the
+   * {@link createRoutes} table(see {@link SearchRoutesOf}); the manual
+   * generic cannot infer a sibling schema's output, so path params stay
+   * strings here. Return `undefined` to continue, a path string to
+   * redirect(a plain string pushes the terminal entry), or a
+   * {@link RedirectTarget target object}: `{path: '/login', replace: true}`
+   * makes the navigation replace the current entry instead of pushing
+   * one(the login-guard pattern; when several guards redirect, the last
+   * hop wins). At runtime the search holds the level's parsed
+   * search — the schema output, or the degraded input without a schema —
+   * and the context holds the router's `context` option folded with the
+   * prefix's route contexts. The guard context types `router` as
    * `RouterInstance<any>`: a precise `RouterInstance<Route>` here would
    * recurse into `Route`'s own members and break `Route`'s assignability
    * to plain `BaseRoute`.
    */
   beforeLoad?(
-    ctx: GuardContext<any, S, Record<string, string>, MergedContext<C, RC>>
-  ): Awaitable<string | void>;
+    ctx: GuardContext<any, S, RouteParams<P>, MergedContext<C, RC>>
+  ): Awaitable<string | RedirectTarget | void>;
   /** Path pattern; params of the contexts above are inferred from it. */
   path?: P;
   /**

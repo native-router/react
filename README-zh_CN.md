@@ -47,7 +47,7 @@ function StackWarmer() {
 
 ### 预取与预览
 
-`PrefetchLink` 在点击之前——经过路由守卫——解析目标视图，提供四种策略：`intent`（默认，hover/focus）、`render`、`viewport` 与 `none`。`usePrefetch` 暴露 `{view, loading, error}`，用户悬停时就能在气泡里渲染目标视图的实时预览。
+`PrefetchLink` 在点击之前——经过路由守卫——解析目标视图，提供四种策略：`intent`（默认，hover/focus）、`render`、`viewport` 与 `none`。`usePrefetch` 暴露 `{view, loading, error}`，用户悬停时就能在气泡里渲染目标视图的实时预览。可靠性内建：失败的预取会被丢弃，下一次 hover/focus 自动重试；点击本身永远经 router 的 `preload` 缓存重新校验——`invalidate()`（登出、切换账号）不会被过期条目绕过，守卫通过过的旧条目不重跑守卫就不可能提交；TTL 内这次校验是免费的，命中的是同一个缓存 promise。
 
 ```tsx
 import {PrefetchLink, usePrefetch} from '@native-router/react';
@@ -69,7 +69,7 @@ function Preview({visible}: {visible: boolean}) {
 ## 功能
 
 - 开箱即用的三种 history 模式：`HistoryRouter`、`HashRouter`、`MemoryRouter`（测试、小组件）；`Router` 接收外部创建的实例渲染，`createRouter` 用自定义 history 构建实例
-- 路由守卫：每层路由支持静态 `redirect` 与异步 `beforeLoad`，按浅层到深层执行；连续重定向超过 10 次以 `RedirectLoopError` 拒绝
+- 路由守卫：每层路由支持静态 `redirect` 与异步 `beforeLoad`，按浅层到深层执行；二者都可返回 `{path, replace: true}` 改写当前历史条目而非压栈（重定向链以最后一跳为准）；连续重定向超过 10 次以 `RedirectLoopError` 拒绝
 - 可取消的异步导航：发起下一次导航会取代进行中的导航；`cancel(router)` 主动中止；history POP 也会取消——同时导航链的 `AbortSignal` 以 `ctx.signal` 传入每个 `data` loader（`fetch(url, {signal: ctx.signal})`），被取代的导航真正停止请求而非仅丢弃结果
 - `NavLink`：`isActive`/`isExactActive`、`end`、`caseSensitive` 与 `aria-current`（默认 `"page"`）；`className`/`style`/`children` 支持 `({isActive, isExactActive})` 回调；`to="/"` 对所有路径都是激活态
 - 多态链接：四个 Link 组件都接受 `as` 组件——组件自有 props 摊平到链接上并做类型检查，冲突 props 走 `asProps` 逃生舱，`href`/`onClick`/`aria-current` 由链接注入，`ref` 透传
@@ -83,7 +83,7 @@ function Preview({visible}: {visible: boolean}) {
 - 路由级 context：路由可再声明自己的 `context` 对象，覆盖合并（同名 key 路由优先）在该层及其全部更深层级上——`beforeLoad` 看到累积到自身层级的合并，每个 `data` loader 看到累积到它自己层级的合并；`createRoutes` 返回表与 `Route<P, S, C, RC>` 第四泛型都闭环了类型，从不声明的表拿到的仍是原样的实例值
 - `ScrollRestoration`：按历史条目恢复滚动位置，back/forward 复原、push 重置（`resetOnPush` 可关闭）
 - `viewTransition` prop 让导航接入浏览器 View Transitions API：`true` 仅对 push 导航做动画，谓词按 `{action, to, from}` 逐次判定；方向感通过过渡 `types` 交给 `:active-view-transition-type(push|pop)` CSS 消费，不支持的浏览器降级为普通导航
-- 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道
+- 路由级 `preload(router, to)` 预解析共享视图：并发去重 + 30 秒 TTL；`PrefetchLink` 的预取即走此通道——失败的预取在下次 hover/focus 重试，点击永远经缓存重新校验（`invalidate()` 不会被过期条目绕过，TTL 内校验免费），预取的返回了 `{replace: true}` 的重定向按 replace 提交
 - Hooks：`useRouter`、`useView`、`useData<T>(name?)`（当前层级 data 的类型化读取，或祖先路由的具名数据——注解可用 `RouteDataOf` 从 loader 推导，不必手写）、`useMatched`（匹配层级、参数、location）、`useLoading`、`usePrefetch`、`useSearch(schema?)`、`useSetSearch(schema)`、`useBlocker(fn)`（未保存变更守卫：core 的 `setBlocker` 否决——谓词是放行语义，返回 `true` 放行导航、`false` 否决导航，不是「返回 true 阻止」；组件挂载期间注册、始终以最新闭包被询问；每次否决都记录在返回值的 `blocker.state` 上，并带 `proceed()`/`reset()` 通道——`proceed()` 重试被否决的导航，仅绕过本 hook 自己的 blocker，确认框场景三行搞定）
 - Router 组件的 `notFound` prop：`NotFoundError`（未匹配路径，或守卫/loader 为缺失数据抛出）渲染声明的节点/组件作为该条目的已提交视图，不再白屏——仅对 `NotFoundError` 优先于 `errorHandler`，其他错误保持既有通道
 - 两层错误处理、两个阶段：Router 上的全局 `errorHandler`，路由级 `errorComponent`（接收 `{error, ctx}`）——`errorComponent` 既渲染 resolve 期失败（loader/守卫/search，无 `ctx.phase`），也渲染组件子树的渲染期抛错（`ctx.phase === 'render'`，由路由级错误边界捕获，渲染崩溃不会越过路由炸到 React 根，正如浏览器对任何加载失败都有错误页）
@@ -163,7 +163,7 @@ import {HistoryRouter as Router, View} from '@native-router/react';
 
 库只负责**时序**：每个通过判定的导航都提交在 `document.startViewTransition(() => flushSync(render))` 内，DOM 在过渡回调中同步更新，浏览器才能正确截取前后两帧。过渡打开期间，挂起的新视图只在回调内提交——期间其它渲染源（loading 状态、POP 之后紧跟的内部 replace）读到的仍是旧视图，不会有任何抢先于截帧的提交。库**不给任何元素挂 `view-transition-name`、不注入 CSS**：动画范围完全由你的样式表决定。
 
-**`true` 只对 push 做动画。** `pop` 命中的是 `viewStack` 快照——动画只会拖慢返回；`replace`（守卫重定向、`refresh`）保持静默。谓词则按 `{action: 'push' | 'replace' | 'pop', to, from}` 逐次判定：
+**`true` 只对 push 做动画。** `pop` 命中的是 `viewStack` 快照——动画只会拖慢返回；`replace` 保持静默（`refresh`，以及返回了 `{path, replace: true}` 的守卫重定向；纯路径字符串的重定向仍是 push）。谓词则按 `{action: 'push' | 'replace' | 'pop', to, from}` 逐次判定：
 
 ```tsx
 // push 从右侧滑入，back/forward 镜像滑出：
@@ -443,7 +443,10 @@ const routes = {
     {
       path: '/users/:id',
       component: () => import('./UserProfile'),
-      // 守卫在视图解析前执行；返回路径字符串即重定向
+      // 守卫在视图解析前执行；返回路径字符串即重定向——
+      // 或返回 {path, replace: true} 改写当前条目而非压栈，
+      // 后退就此跳过被守卫的 URL：
+      //   return {path: `/login?redirect=${encodeURIComponent(location.pathname)}`, replace: true};
       async beforeLoad({params}) {
         if (!await canView(+params.id)) return '/login';
       },
@@ -552,7 +555,7 @@ import {ScrollRestoration} from '@native-router/react';
 
 用 `createRoutes` 构建路由表，类型自动闭环：返回表上每层的 `ctx.search` 从该层自己的 schema 推导，`Route<P, S>` 泛型与回调注解都不再需要。（字面量内直接写的回调按宽松 `Route` 检查——`ctx.search: any`——TypeScript 无法用同级属性做上下文类型；精确类型在返回表上成立，与 schema 矛盾的回调注解会在属性处被拒。）
 
-`ctx.params` 走同一闭环，从匹配前缀的 path 字面量累积推导：`data` loader 拿到累积的原始字符串 params，`beforeLoad` 守卫拿到经前缀 `params` schema 升级后的值。模式里没有参数的层保持宽松 `Record<string, string>`——精度是渐进的，既有路由表不会被重定型：
+`ctx.params` 走同一闭环，从匹配前缀的 path 字面量累积推导：`data` loader 拿到累积的原始字符串 params，`beforeLoad` 守卫拿到经前缀 `params` schema 升级后的值。模式里没有参数的层保持宽松 `Record<string, string>`——精度是渐进的，既有路由表不会被重定型。手写的 `Route<'/users/:id'>` 当场获得同样的精度：它的 `beforeLoad` 与 `data` loader 一样从模式推导 `ctx.params`，而经 `params` schema 转换的值仍只能通过 `createRoutes` 闭环：
 
 ```tsx
 import {createRoutes, useData, useSearch} from '@native-router/react';

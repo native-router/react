@@ -1,4 +1,4 @@
-import {commit, createHref, preload} from '@native-router/core';
+import {commit, commitReplace, createHref, preload} from '@native-router/core';
 import type {ResolvedEntry} from '@native-router/core';
 import type {AsLinkProps, LinkProps, Route} from '@@/types';
 import {
@@ -70,7 +70,6 @@ function PrefetchLinkImpl(
   const entryRef = useRef<Promise<ResolvedEntry<ReactNode>> | undefined>(
     undefined
   );
-  const failedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
   const [view, setView] = useState<ReactNode>();
@@ -88,7 +87,6 @@ function PrefetchLinkImpl(
   function prefetchIt(): Promise<ResolvedEntry<ReactNode>> {
     setLoading(true);
     setError(undefined);
-    failedRef.current = false;
     // Route guards(redirect/beforeLoad) run before the view resolves; the
     // stored entry carries the terminal location, so prefetch, preview and
     // commit all agree on the final target. preload() caches the entry at
@@ -99,15 +97,20 @@ function PrefetchLinkImpl(
     entryRef.current = entryPromise;
     // The derived chain carries the loading/error/view state and handles
     // the rejection of the entry task, so a prefetched task that is never
-    // committed does not surface as a global unhandledrejection. Failure is
-    // tracked in `failedRef` instead of relying on the rejected task itself.
+    // committed does not surface as a global unhandledrejection. A failure
+    // also drops the stored entry — but only while this promise is still
+    // the stored one, so a superseding prefetch(to change, retry) is not
+    // clobbered — letting a later hover retry instead of reusing the
+    // rejected promise forever.
     entryPromise
       .then((entry) => entry.task)
       .then(
         (v) => setView(v),
         (e) => {
           setError(e);
-          failedRef.current = true;
+          if (entryRef.current === entryPromise) {
+            entryRef.current = undefined;
+          }
         }
       )
       .finally(() => setLoading(false));
@@ -136,17 +139,26 @@ function PrefetchLinkImpl(
     )
       return;
     e.preventDefault();
-    // A stored entry that already failed can never be committed
-    // successfully, so resolve the target again before committing.
-    const stored = entryRef.current;
-    const entryPromise = !stored || failedRef.current ? prefetchIt() : stored;
+    // Always resolve through preload(), never through the stored entry: a
+    // component-local entry is invisible to invalidate(router) and to the
+    // TTL/commit evictions of the router-level cache, so committing it
+    // directly could land a stale guard-passed target without re-running
+    // the guards. Within the TTL preload() hands back the very same cached
+    // entry promise, so the happy path re-validation is free.
+    const entryPromise = prefetchIt();
     // The terminal location of the entry is committed, not the link target.
+    // A redirect entry flagged `replace` lands through commitReplace, so a
+    // guard like "must not leave the protected URL in history" keeps its
+    // promise even when the redirect came from a prefetch.
     entryPromise
-      .then((entry) => commit(router, entry.task, entry.location))
+      .then((entry) =>
+        entry.replace
+          ? commitReplace(router, entry.task, entry.location)
+          : commit(router, entry.task, entry.location)
+      )
       .catch(() => undefined)
       .finally(() => {
         entryRef.current = undefined;
-        failedRef.current = false;
       });
   }
 
@@ -154,7 +166,6 @@ function PrefetchLinkImpl(
   // error or preview from the previous target is not rendered for the new one.
   useEffect(() => {
     entryRef.current = undefined;
-    failedRef.current = false;
     setLoading(false);
     setError(undefined);
     setView(undefined);

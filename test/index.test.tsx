@@ -4,6 +4,7 @@ import {createMemoryHistory} from 'history';
 import React from 'react';
 import {
   commit,
+  commitReplace,
   create,
   navigate,
   preload,
@@ -300,6 +301,84 @@ describe('Router', () => {
       await expect(committedTask).resolves.toEqual({default: null});
       // The terminal location of the re-resolved entry is committed.
       expect(committedLocation).toEqual({pathname: '/test'});
+      expect(await screen.findByText('view')).toBeDefined();
+    });
+
+    it('should retry the prefetch when a hover fails and the link is hovered again', async () => {
+      // The failed hover drops the stored entry, so the next hover retries
+      // the resolution instead of being wedged on the rejected promise.
+      vi.mocked(preload).mockRejectedValueOnce(new Error('hover boom'));
+      renderLink({to: '/a'});
+      await act(async () => {
+        fireEvent.mouseEnter(screen.getByTestId('target'));
+      });
+      expect(await screen.findByText('error:hover boom')).toBeDefined();
+
+      await act(async () => {
+        fireEvent.mouseEnter(screen.getByTestId('target'));
+      });
+      expect(preload).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText('view')).toBeDefined();
+    });
+
+    it('should re-validate through preload on click, not the locally stored entry', async () => {
+      // invalidate(router) clears the router-level cache but not the
+      // component-local ref, so the click must always go through preload()
+      // to pick up a fresh(guard-re-run) entry instead of committing the
+      // stale stored one.
+      vi.mocked(preload)
+        .mockResolvedValueOnce({
+          location: {pathname: '/first', search: '', hash: ''},
+          task: Promise.resolve({default: 'first'})
+        })
+        .mockResolvedValueOnce({
+          location: {pathname: '/second', search: '', hash: ''},
+          task: Promise.resolve({default: 'second'})
+        });
+      renderLink({to: '/a'});
+      await act(async () => {
+        fireEvent.mouseEnter(screen.getByTestId('target'));
+      });
+      expect(await screen.findByText('view')).toBeDefined();
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('target'));
+      });
+      expect(preload).toHaveBeenCalledTimes(2);
+      expect(commit).toHaveBeenCalledTimes(1);
+      const [committedTask, committedLocation] = vi
+        .mocked(commit)
+        .mock.calls[0]!.slice(1);
+      await expect(committedTask).resolves.toEqual({default: 'second'});
+      expect(committedLocation).toEqual({
+        pathname: '/second',
+        search: '',
+        hash: ''
+      });
+    });
+
+    it('should commit a replace-redirect entry through commitReplace', async () => {
+      // A guard redirect flagged replace must land as a history replace
+      // even when the entry arrived through a prefetch.
+      vi.mocked(preload).mockResolvedValueOnce({
+        location: {pathname: '/login', search: '', hash: ''},
+        task: Promise.resolve({default: null}),
+        replace: true
+      });
+      renderLink({to: '/protected'});
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('target'));
+      });
+      expect(commitReplace).toHaveBeenCalledTimes(1);
+      expect(commit).not.toHaveBeenCalled();
+      const [, committedTask, committedLocation] =
+        vi.mocked(commitReplace).mock.calls[0]!;
+      await expect(committedTask).resolves.toEqual({default: null});
+      expect(committedLocation).toEqual({
+        pathname: '/login',
+        search: '',
+        hash: ''
+      });
       expect(await screen.findByText('view')).toBeDefined();
     });
 

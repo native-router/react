@@ -47,7 +47,7 @@ function StackWarmer() {
 
 ### Prefetch and preview
 
-`PrefetchLink` resolves the target view — through the route guards — before the click, with four strategies: `intent` (default, hover/focus), `render`, `viewport` and `none`. `usePrefetch` exposes `{view, loading, error}`, so a popover can render a live preview of the target view while the user is still hovering. The typed links take the same `prefetch` prop directly — `<TypedLink<typeof routes> to="/users/:id" params={{id: '7'}} prefetch="viewport">` needs no component swap.
+`PrefetchLink` resolves the target view — through the route guards — before the click, with four strategies: `intent` (default, hover/focus), `render`, `viewport` and `none`. `usePrefetch` exposes `{view, loading, error}`, so a popover can render a live preview of the target view while the user is still hovering. The typed links take the same `prefetch` prop directly — `<TypedLink<typeof routes> to="/users/:id" params={{id: '7'}} prefetch="viewport">` needs no component swap. Reliability is built in: a failed prefetch is dropped, so the next hover/focus retries it, and the click itself always re-validates through the router's `preload` cache — `invalidate()` (logout, account switch) is honored, so a stale guard-passed entry can never commit without re-running the guards; within the TTL that re-validation is free, resolving to the same cached promise.
 
 ```tsx
 import {PrefetchLink, usePrefetch} from '@native-router/react';
@@ -69,7 +69,7 @@ function Preview({visible}: {visible: boolean}) {
 ## Features
 
 - Three history modes out of the box: `HistoryRouter`, `HashRouter`, `MemoryRouter` (tests, widgets); `Router` renders with an externally created instance, `createRouter` builds one for a custom history
-- Route guards: static `redirect` and async `beforeLoad` on every route level, run shallow → deep; more than 10 chained redirects reject with `RedirectLoopError`
+- Route guards: static `redirect` and async `beforeLoad` on every route level, run shallow → deep; both may return `{path, replace: true}` to overwrite the current history entry instead of pushing (the last redirect hop wins); more than 10 chained redirects reject with `RedirectLoopError`
 - Cancelable async navigation: starting a new navigation supersedes the in-flight one; `cancel(router)` aborts it; a history POP cancels it too — and the chain's `AbortSignal` reaches every `data` loader as `ctx.signal` (`fetch(url, {signal: ctx.signal})`), so superseded navigations stop their requests instead of only having results dropped
 - `NavLink` with `isActive`/`isExactActive`, `end`, `caseSensitive` and `aria-current` (defaults to `"page"`); `className`/`style`/`children` accept `({isActive, isExactActive})` callbacks; `to="/"` is active for every path
 - Polymorphic links: every link component takes an `as` component — own props flattened and type-checked on the link, colliding props through the `asProps` escape hatch, `href`/`onClick`/`aria-current` injected, `ref` forwarded
@@ -83,7 +83,7 @@ function Preview({visible}: {visible: boolean}) {
 - Route context: a route may additionally declare its own `context` object, merged OVER the router context (route wins on key conflicts) for the level and its descendants — `beforeLoad` sees the fold accumulated through its own level, each `data` loader the fold through its level; typing closes on the `createRoutes` table and through `Route<P, S, C, RC>`'s fourth generic, and tables that declare none keep the exact instance value
 - `ScrollRestoration` restores the scroll offset per history entry on back/forward and resets it on push (`resetOnPush` to opt out)
 - `viewTransition` prop on the Router components opts navigation into the browser's View Transitions API: `true` animates push navigations only, a predicate decides per navigation on `{action, to, from}`; the direction rides the transition `types` for `:active-view-transition-type(push|pop)` CSS, and unsupported browsers degrade to plain navigation
-- Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it
+- Router-level `preload(router, to)` shares resolved views across links with in-flight dedup and a 30s TTL; `PrefetchLink` prefetch through it — a failed prefetch retries on the next hover/focus, a click always re-validates through the cache (so `invalidate()` can never be outrun by a stale entry; within the TTL the check is free), and a prefetched redirect that returned `{replace: true}` commits by replacing
 - Hooks: `useRouter`, `useView`, `useData<T>(name?)` (typed data of the current level, or named data of ancestor routes — derive the annotation from the loader with `RouteDataOf` instead of hand-writing it), `useMatched` (matched levels, params, location), `useLoading`, `usePrefetch`, `useSearch(schema?)`, `useSetSearch(schema)`, `useRouteDebug()` (the core's `onDebug`/`getDebugInfo` observability surface as a `useSyncExternalStore` snapshot — current location, window depth, snapshot count and the in-flight navigation chain, re-rendered on every navigation lifecycle event; purely observational), `useBlocker(fn)` (unsaved-changes guard: the core `setBlocker` veto — the predicate allow-lists, return `true` to let the navigation through, `false` to veto it — registered while the component is mounted and always asked through the latest closure; every veto is tracked on the returned `blocker.state` with a `proceed()`/`reset()` channel — `proceed()` retries the vetoed navigation bypassing this hook's blocker only, so the confirm dialog is a three-liner)
 - `notFound` prop on the Router components: a `NotFoundError` (unmatched path, or a guard/loader throwing one for missing data) renders the declared node/component as the entry's committed view instead of a blank screen — precedence over `errorHandler` for `NotFoundError` only, every other error keeps the existing channel
 - Two error layers, both phases: global `errorHandler` prop on the Router, per-route `errorComponent` receiving `{error, ctx}` — `errorComponent` renders for resolve failures(loader/guard/search, no `ctx.phase`) AND for render errors thrown by the component subtree(`ctx.phase === 'render'`, caught by a route-level error boundary so a rendering crash never escapes past its route, like the browser's error page for any failed load)
@@ -163,7 +163,7 @@ import {HistoryRouter as Router, View} from '@native-router/react';
 
 The library owns only the **timing**: every navigation that passes the check is committed inside `document.startViewTransition(() => flushSync(render))`, so the DOM updates synchronously in the transition callback and the browser captures both frames correctly. While a transition is open, the pending view is committed only inside its callback — anything else that re-renders in between (the loading state, the internal replace that follows a POP) still sees the old view, so nothing leaks a pre-capture commit. The library never assigns a `view-transition-name` and never injects CSS: **what animates is entirely your stylesheet**.
 
-**`true` animates pushes only.** A `pop` lands on a cached `viewStack` snapshot — animating it would only slow the back button down — and `replace` (guard redirects, `refresh`) stays silent. A predicate decides per navigation instead, judged on `{action: 'push' | 'replace' | 'pop', to, from}`:
+**`true` animates pushes only.** A `pop` lands on a cached `viewStack` snapshot — animating it would only slow the back button down — and `replace` stays silent (`refresh`, or a guard redirect that returned `{path, replace: true}`; a plain path-string redirect still pushes). A predicate decides per navigation instead, judged on `{action: 'push' | 'replace' | 'pop', to, from}`:
 
 ```tsx
 // Pushes slide in from the right, back/forward mirror it:
@@ -465,7 +465,10 @@ const routes = {
     {
       path: '/users/:id',
       component: () => import('./UserProfile'),
-      // guards run before the view resolves; return a path to redirect
+      // guards run before the view resolves; return a path to redirect —
+      // or {path, replace: true} to replace instead of push, so back
+      // skips the guarded URL:
+      //   return {path: `/login?redirect=${encodeURIComponent(location.pathname)}`, replace: true};
       async beforeLoad({params}) {
         if (!await canView(+params.id)) return '/login';
       },
@@ -574,7 +577,7 @@ Validate and type the search with a schema — any zod/valibot/arktype schema wo
 
 Build the table with `createRoutes` and the typing closes by itself: the returned table derives every level's `ctx.search` from the level's own schema, so neither the manual `Route<P, S>` generic nor callback annotations are needed. (Callbacks written inside the literal are checked loosely — `ctx.search: any` — since TypeScript cannot contextually type a member from sibling properties; the precise types hold on the returned table, and a callback annotation that contradicts the schema is rejected at the property.)
 
-`ctx.params` closes the same way, from the matched prefix's path patterns: `data` loaders see the accumulated raw string params, `beforeLoad` guards see them upgraded by any prefix level's `params` schema. A level whose pattern has no params keeps the loose `Record<string, string>` — precision is progressive, existing tables never re-type.
+`ctx.params` closes the same way, from the matched prefix's path patterns: `data` loaders see the accumulated raw string params, `beforeLoad` guards see them upgraded by any prefix level's `params` schema. A level whose pattern has no params keeps the loose `Record<string, string>` — precision is progressive, existing tables never re-type. A hand-written `Route<'/users/:id'>` gets the same precision on the spot: its `beforeLoad` types `ctx.params` from the pattern just like the `data` loader, while params coerced by a `params` schema still close only through `createRoutes`.
 
 ```tsx
 import {createRoutes, useData, useSearch} from '@native-router/react';

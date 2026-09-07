@@ -27,6 +27,7 @@ import {
   create,
   go,
   initHistoryStack,
+  invalidate,
   navigate,
   refresh,
   resolve,
@@ -499,6 +500,110 @@ describe('Integration(real core, real history)', () => {
       expect(screen.getByText('B')).toBeDefined();
       expect(router.history.location.pathname).toBe('/b');
       expect(dataB).toHaveBeenCalledTimes(1);
+    });
+
+    // The preload cache never outranks invalidation: the click always
+    // re-validates through preload(), so an entry cached BEFORE an
+    // invalidate() can never commit without its guards running again.
+    it('should re-run guards when a prefetched link is clicked after invalidate()', async () => {
+      const guard = vi.fn(() => undefined);
+      const dataB = vi.fn(() => 'b-data');
+      const routes: Route[] = [
+        {path: '/', component: () => Home},
+        {path: '/b', component: () => B, data: dataB, beforeLoad: guard}
+      ];
+      const history = createMemoryHistory({initialEntries: ['/']});
+      const router = createRouter(routes, history);
+      render(
+        <Router router={router}>
+          <View />
+          <PrefetchLink data-testid="target" to="/b">
+            <PrefetchStatus />
+          </PrefetchLink>
+        </Router>
+      );
+      await flush();
+      expect(screen.getByText('Home')).toBeDefined();
+
+      // Hover resolves once and caches the guard-passed entry.
+      await act(async () => {
+        fireEvent.mouseEnter(screen.getByTestId('target'));
+      });
+      await flush();
+      expect(guard).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('status').textContent).toBe('view');
+
+      // invalidate() drops the preload cache: the click re-resolves
+      // instead of committing the stale entry.
+      invalidate(router);
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('target'));
+      });
+      await flush();
+      expect(guard).toHaveBeenCalledTimes(2);
+      expect(dataB).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('B')).toBeDefined();
+      expect(router.history.location.pathname).toBe('/b');
+    });
+
+    // A prefetched redirect chain flagged `replace` commits the terminal
+    // entry through commitReplace: the current slot is overwritten, the
+    // stack never grows, and the guarded URL never enters history —
+    // back skips it entirely.
+    it('should commit a replace redirect from a prefetched entry without growing history', async () => {
+      const routes: Route[] = [
+        {path: '/', component: () => Home},
+        {path: '/home', component: () => A},
+        {path: '/a', beforeLoad: () => ({path: '/login', replace: true})},
+        {path: '/login', component: () => Login}
+      ];
+      const history = createMemoryHistory({initialEntries: ['/']});
+      const router = createRouter(routes, history);
+      render(
+        <Router router={router}>
+          <View />
+          <PrefetchLink data-testid="target" to="/a">
+            <PrefetchStatus />
+          </PrefetchLink>
+        </Router>
+      );
+      await flush();
+      expect(screen.getByText('Home')).toBeDefined();
+
+      // A prior push gives the replace a slot to overwrite.
+      await act(async () => {
+        await navigate(router, '/home');
+      });
+      await flush();
+      expect(screen.getByText('A')).toBeDefined();
+      expect(history.index).toBe(1);
+
+      // Hover prefetches the terminal /login entry, replace flag and all.
+      await act(async () => {
+        fireEvent.mouseEnter(screen.getByTestId('target'));
+      });
+      await flush();
+      expect(screen.getByTestId('status').textContent).toBe('view');
+      expect(router.history.location.pathname).toBe('/home');
+
+      // Click commits via replace: the /home slot is overwritten and
+      // the index does not grow.
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('target'));
+      });
+      await flush();
+      expect(screen.getByText('Login')).toBeDefined();
+      expect(router.history.location.pathname).toBe('/login');
+      expect(history.index).toBe(1);
+
+      // Back lands on the entry below the replaced slot: the protected
+      // /a URL never entered the stack.
+      await act(async () => {
+        history.back();
+      });
+      await flush();
+      expect(screen.getByText('Home')).toBeDefined();
+      expect(history.index).toBe(0);
     });
 
     // The loader chain's AbortSignal bridge: navigate A→B while A's

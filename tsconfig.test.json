@@ -2,7 +2,24 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": ["node", "vitest/globals"],
-    "rootDir": "."
+    // Sibling-first core resolution, mirroring vitest.config.ts: local
+    // monorepo checkouts typecheck react against the live core source
+    // (unpublished APIs like ResolvedEntry.replace); when the sibling repo
+    // is absent(CI checks this package out alone) TS falls back to the
+    // registry package in node_modules for every entry below. `paths`
+    // replaces the base mapping wholesale, so the base entries are repeated.
+    "paths": {
+      "@/*": ["./demos/*"],
+      "@native-router/react/server": ["./src/server.tsx"],
+      "@native-router/react/ssr": ["./src/ssr.tsx"],
+      "@native-router/react": ["./src/index.tsx"],
+      "@@/*": ["./src/*"],
+      "@native-router/core/util": ["../core/src/util.ts"],
+      "@native-router/core": ["../core/src/index.ts"]
+    },
+    // The core source mapping pulls ../core/src into the program; rootDir
+    // must cover both packages(noEmit here, so only TS6059 cares).
+    "rootDir": ".."
   },
   "include": ["src", "test", "vitest.config.ts", "vite.config.ts"],
   "exclude": [
