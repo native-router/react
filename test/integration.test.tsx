@@ -2570,6 +2570,69 @@ describe('useSetSearch', () => {
       process.off('unhandledRejection', onUnhandled);
     }
   });
+
+  it('should navigate within the app space on an absolute baseUrl — no double prefix', async () => {
+    // GitHub-Pages-style deployment: every raw browser path carries the
+    // baseUrl. The setter must assemble its target in app space so
+    // toLocation() prepends the base exactly once; the raw pathname
+    // would double it (/painless/painless/?...) and miss every route.
+    const tagSearch: StandardSchemaV1<unknown, {tag: string}> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate(value) {
+          const {tag} = (value ?? {}) as {tag?: unknown};
+          return typeof tag === 'string' && tag
+            ? {value: {tag}}
+            : {issues: [{message: 'expected a tag', path: ['tag']}]};
+        }
+      }
+    };
+
+    function TaggedHome() {
+      const {tag} = useSearch(tagSearch);
+      const setSearch = useSetSearch(tagSearch);
+      return (
+        <div>
+          <span data-testid="tag">{tag}</span>
+          <button
+            type="button"
+            data-testid="flip-tag"
+            onClick={() => setSearch({tag: tag === 'a' ? 'b' : 'a'})}
+          >
+            Flip
+          </button>
+        </div>
+      );
+    }
+
+    const history = createMemoryHistory({
+      initialEntries: ['/painless/?tag=a']
+    });
+    const routes: Route[] = [{path: '/', component: () => TaggedHome}];
+    const router = createRouter(routes, history, {baseUrl: '/painless'});
+    render(
+      <Router router={router}>
+        <View />
+      </Router>
+    );
+    await flush();
+    expect(screen.getByTestId('tag').textContent).toBe('a');
+
+    fireEvent.click(screen.getByTestId('flip-tag'));
+    await flush();
+    // The raw browser path keeps exactly one base prefix — not two —
+    // and the view stays matched instead of falling into notFound.
+    expect(history.location.pathname).toBe('/painless/');
+    expect(history.location.search).toBe('?tag=b');
+    expect(screen.getByTestId('tag').textContent).toBe('b');
+
+    // The replace flavor assembles the target the same way.
+    fireEvent.click(screen.getByTestId('flip-tag'));
+    await flush();
+    expect(history.location.pathname).toBe('/painless/');
+    expect(history.location.search).toBe('?tag=a');
+  });
 });
 
 describe('createRoute factory', () => {

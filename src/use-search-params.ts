@@ -170,8 +170,17 @@ function setSearch(
   opts?: {replace?: boolean}
 ): Promise<void> | void {
   const {history} = router;
-  const {pathname, hash} = history.location;
-  const to = pathname + (qs ? `?${qs}` : '') + hash;
+  const {hash} = history.location;
+  // history is created without a `basename`, so `location.pathname` is
+  // the raw browser path — baseUrl included (the same rawness the core
+  // matcher cuts with `pathname.slice(baseUrl.length)`). Strip it here
+  // so `toLocation`/`navigate` below prepend the base exactly once: a
+  // raw pathname would double it on absolute-base apps (GitHub Pages)
+  // and miss every route.
+  const to =
+    history.location.pathname.slice(router.baseUrl.length) +
+    (qs ? `?${qs}` : '') +
+    hash;
   const location = toLocation(router, to);
   if (opts?.replace) {
     // The searchDeps fast path first: a same-route update whose declared
